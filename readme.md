@@ -20,9 +20,8 @@ A RESTful API for a mood tracking application built with Node.js, Express, and M
 
 Set the following environment variables:
 
-- `MONGODB_USERNAME`
-- `MONGODB_PASSWORD`
-- `MONGODB_CLUSTER_URL`
+- `GMAIL_USERNAME`
+- `GMAIL_PASSWORD`
 - `JWT_SECRET`
 
 ## Installation

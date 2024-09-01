@@ -89,3 +89,6 @@ typings/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# other stuff
+database.sqlite

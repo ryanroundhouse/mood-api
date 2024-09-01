@@ -1,58 +1,61 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const port = 3000;
+const winston = require('winston');
 
-// MongoDB connection
-const MONGODB_USERNAME = process.env.MONGODB_USERNAME;
-const MONGODB_PASSWORD = process.env.MONGODB_PASSWORD;
-const MONGODB_CLUSTER_URL = process.env.MONGODB_CLUSTER_URL;
+// Configure winston logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'app.log' }),
+  ],
+});
+
+// SQLite database connection
+const db = new sqlite3.Database('database.sqlite');
+
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      password TEXT NOT NULL,
+      isVerified INTEGER DEFAULT 0,
+      verificationToken TEXT,
+      resetPasswordToken TEXT,
+      resetPasswordExpires INTEGER
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS moods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER NOT NULL,
+      datetime TEXT NOT NULL,
+      rating INTEGER NOT NULL,
+      comment TEXT,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    )
+  `);
+});
+
 // Gmail credentials
-const GMAIL_USERNAME = process.env.EMAIL_USERNAME;
-const GMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
+const GMAIL_USERNAME = process.env.GMAIL_USERNAME;
+const GMAIL_PASSWORD = process.env.GMAIL_PASSWORD;
 // JWT
 const JWT_SECRET = process.env.JWT_SECRET;
-
-mongoose
-  .connect(
-    `mongodb+srv://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@${MONGODB_CLUSTER_URL}/moodtracker?retryWrites=true&w=majority`,
-    {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    }
-  )
-  .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch((err) => console.error('MongoDB Atlas connection error:', err));
-
-// Updated User model
-const User = mongoose.model(
-  'User',
-  new mongoose.Schema({
-    email: { type: String, required: true, unique: true },
-    name: { type: String },
-    password: { type: String, required: true },
-    isVerified: { type: Boolean, default: false },
-    verificationToken: { type: String },
-    resetPasswordToken: { type: String },
-    resetPasswordExpires: { type: Date },
-  })
-);
-
-// Updated Mood model
-const Mood = mongoose.model(
-  'Mood',
-  new mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    datetime: { type: Date, required: true },
-    rating: { type: Number, required: true, min: 0, max: 5 },
-    comment: { type: String, maxlength: 500 }, // New optional field
-  })
-);
 
 app.use(express.json());
 
@@ -98,79 +101,104 @@ app.post(
       const hashedPassword = await bcrypt.hash(password, 10);
       const verificationToken = crypto.randomBytes(20).toString('hex');
 
-      const user = new User({
-        email,
-        name,
-        password: hashedPassword,
-        verificationToken,
-      });
-      await user.save();
+      db.run(
+        `INSERT INTO users (email, name, password, verificationToken) VALUES (?, ?, ?, ?)`,
+        [email, name, hashedPassword, verificationToken],
+        function (err) {
+          if (err) {
+            if (err.code === 'SQLITE_CONSTRAINT') {
+              return res.status(400).json({ error: 'Email already exists' });
+            }
+            return res.status(500).json({ error: 'Error registering user' });
+          }
 
-      // Send verification email
-      const verificationLink = `http://localhost:${port}/verify/${verificationToken}`;
-      await transporter.sendMail({
-        to: email,
-        subject: 'Verify your email',
-        html: `Please click this link to verify your email: <a href="${verificationLink}">${verificationLink}</a>`,
-      });
+          // Send verification email
+          const verificationLink = `http://localhost:${port}/verify/${verificationToken}`;
+          transporter.sendMail({
+            from: 'moodmailer@gmail.com',
+            to: email,
+            subject: 'Verify your email',
+            html: `Please click this link to verify your email: <a href="${verificationLink}">${verificationLink}</a>`,
+          });
 
-      res.status(201).json({
-        message:
-          'User created successfully. Please check your email to verify your account.',
-      });
+          logger.info(`User registered successfully: ${email}`);
+          res.status(201).json({
+            message:
+              'User created successfully. Please check your email to verify your account.',
+          });
+        }
+      );
     } catch (error) {
-      console.error('Error during registration:', error);
-      if (error.code === 11000) {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
+      logger.error('Error during registration:', error);
       res.status(500).json({ error: 'Error registering user' });
     }
   }
 );
 
 // New route for email verification
-app.get('/verify/:token', async (req, res) => {
-  try {
-    const { token } = req.params;
-    const user = await User.findOne({ verificationToken: token });
+app.get('/verify/:token', (req, res) => {
+  const { token } = req.params;
 
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid verification token' });
+  db.get(
+    `SELECT * FROM users WHERE verificationToken = ?`,
+    [token],
+    (err, user) => {
+      if (err) {
+        logger.error('Error verifying email:', err);
+        return res.status(500).json({ error: 'Error verifying email' });
+      }
+
+      if (!user) {
+        return res.status(400).json({ error: 'Invalid verification token' });
+      }
+
+      db.run(
+        `UPDATE users SET isVerified = 1, verificationToken = NULL WHERE id = ?`,
+        [user.id],
+        (err) => {
+          if (err) {
+            logger.error('Error verifying email:', err);
+            return res.status(500).json({ error: 'Error verifying email' });
+          }
+
+          logger.info(`Email verified successfully for user: ${user.email}`);
+          res.json({
+            message: 'Email verified successfully. You can now log in.',
+          });
+        }
+      );
     }
-
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    await user.save();
-
-    res.json({ message: 'Email verified successfully. You can now log in.' });
-  } catch (error) {
-    console.error('Error verifying email:', error);
-    res.status(500).json({ error: 'Error verifying email' });
-  }
+  );
 });
 
 // Updated User login
-app.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+
+  db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: 'Error logging in' });
+    }
+
     if (!user) {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
+
     if (!user.isVerified) {
       return res
         .status(400)
         .json({ error: 'Please verify your email before logging in' });
     }
+
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '1h' });
+
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1h' });
+    logger.info(`User logged in successfully: ${email}`);
     res.json({ token });
-  } catch (error) {
-    res.status(500).json({ error: 'Error logging in' });
-  }
+  });
 });
 
 // Enhanced mood creation route (now includes optional comment)
@@ -182,55 +210,93 @@ app.post(
     body('rating').isInt({ min: 0, max: 5 }),
     body('comment').optional().isString().trim().isLength({ max: 500 }),
   ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { datetime, rating, comment } = req.body;
-      const userId = req.user.id;
-
-      // Get the start and end of the day for the given datetime
-      const startOfDay = new Date(datetime);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(datetime);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      // Find and update existing mood for the day, or create a new one
-      const updatedMood = await Mood.findOneAndUpdate(
-        {
-          user: userId,
-          datetime: { $gte: startOfDay, $lte: endOfDay },
-        },
-        {
-          user: userId,
-          datetime,
-          rating,
-          comment,
-        },
-        { new: true, upsert: true }
-      );
-
-      res.status(201).json(updatedMood);
-    } catch (error) {
-      console.error('Error creating/updating mood:', error);
-      res.status(500).json({ error: 'Internal server error' });
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+
+    const { datetime, rating, comment } = req.body;
+    const userId = req.user.id;
+
+    // Get the start and end of the day for the given datetime
+    const startOfDay = new Date(datetime);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(datetime);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    db.get(
+      `SELECT * FROM moods WHERE userId = ? AND datetime >= ? AND datetime <= ?`,
+      [userId, startOfDay.toISOString(), endOfDay.toISOString()],
+      (err, mood) => {
+        if (err) {
+          logger.error('Error creating/updating mood:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (mood) {
+          db.run(
+            `UPDATE moods SET datetime = ?, rating = ?, comment = ? WHERE id = ?`,
+            [datetime, rating, comment, mood.id],
+            function (err) {
+              if (err) {
+                logger.error('Error creating/updating mood:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+
+              logger.info(`Mood updated successfully for user: ${userId}`);
+              res.status(201).json({
+                id: mood.id,
+                userId,
+                datetime,
+                rating,
+                comment,
+              });
+            }
+          );
+        } else {
+          db.run(
+            `INSERT INTO moods (userId, datetime, rating, comment) VALUES (?, ?, ?, ?)`,
+            [userId, datetime, rating, comment],
+            function (err) {
+              if (err) {
+                logger.error('Error creating/updating mood:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+
+              logger.info(`Mood created successfully for user: ${userId}`);
+              res.status(201).json({
+                id: this.lastID,
+                userId,
+                datetime,
+                rating,
+                comment,
+              });
+            }
+          );
+        }
+      }
+    );
   }
 );
 
 // Get all mood entries for the authenticated user
-app.get('/moods', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const moods = await Mood.find({ user: userId }).sort({ datetime: -1 });
-    res.json(moods);
-  } catch (error) {
-    console.error('Error fetching moods:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+app.get('/moods', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  db.all(
+    `SELECT * FROM moods WHERE userId = ? ORDER BY datetime DESC`,
+    [userId],
+    (err, moods) => {
+      if (err) {
+        logger.error('Error fetching moods:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      logger.info(`Fetched all moods for user: ${userId}`);
+      res.json(moods);
+    }
+  );
 });
 
 // Serve static content from the /app folder
@@ -242,66 +308,89 @@ app.get('/', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
 app.listen(port, () => {
-  console.log(`API listening at http://localhost:${port}`);
+  logger.info(`API listening at http://localhost:${port}`);
 });
 
 // New route for forgot password
-app.post('/forgot-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
+app.post('/forgot-password', (req, res) => {
+  const { email } = req.body;
+
+  db.get(`SELECT * FROM users WHERE email = ?`, [email], (err, user) => {
+    if (err) {
+      logger.error('Error in forgot password:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     const resetToken = crypto.randomBytes(20).toString('hex');
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
-    await user.save();
+    const resetPasswordExpires = Date.now() + 3600000; // 1 hour
 
-    const resetLink = `http://localhost:${port}/reset-password/${resetToken}`;
-    await transporter.sendMail({
-      to: email,
-      subject: 'Password Reset',
-      html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a>`,
-    });
+    db.run(
+      `UPDATE users SET resetPasswordToken = ?, resetPasswordExpires = ? WHERE id = ?`,
+      [resetToken, resetPasswordExpires, user.id],
+      (err) => {
+        if (err) {
+          logger.error('Error in forgot password:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
 
-    res.json({ message: 'Password reset email sent' });
-  } catch (error) {
-    console.error('Error in forgot password:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+        const resetLink = `http://localhost:${port}/reset-password/${resetToken}`;
+        transporter.sendMail({
+          to: email,
+          subject: 'Password Reset',
+          html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a>`,
+        });
+
+        logger.info(`Password reset email sent to: ${email}`);
+        res.json({ message: 'Password reset email sent' });
+      }
+    );
+  });
 });
 
 // New route for password reset
-app.post('/reset-password/:token', async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { password } = req.body;
+app.post('/reset-password/:token', (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
 
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() },
-    });
+  db.get(
+    `SELECT * FROM users WHERE resetPasswordToken = ? AND resetPasswordExpires > ?`,
+    [token, Date.now()],
+    async (err, user) => {
+      if (err) {
+        logger.error('Error in password reset:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
 
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
+      if (!user) {
+        return res
+          .status(400)
+          .json({ error: 'Invalid or expired reset token' });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      db.run(
+        `UPDATE users SET password = ?, resetPasswordToken = NULL, resetPasswordExpires = NULL WHERE id = ?`,
+        [hashedPassword, user.id],
+        (err) => {
+          if (err) {
+            logger.error('Error in password reset:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          logger.info(`Password reset successfully for user: ${user.email}`);
+          res.json({ message: 'Password reset successful' });
+        }
+      );
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-
-    res.json({ message: 'Password reset successful' });
-  } catch (error) {
-    console.error('Error in password reset:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  );
 });

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - MoodTracker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+      <nav>
+        <ul>
+          <li><a href="dashboard.html">Dashboard</a></li>
+          <li><a href="#" id="logoutBtn">Logout</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section class="hero dashboard-hero">
+      <h1>Welcome to your Dashboard</h1>
+      <p>Track your mood and discover patterns over time.</p>
+    </section>
+
+    <section class="dashboard-container">
+      <div id="moodEntries"></div>
+    </section>
+
+    <script>
+      // Check if user is logged in
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = 'login.html';
+      }
+
+      // Fetch mood entries
+      async function fetchMoodEntries() {
+        try {
+          const response = await fetch('/moods', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const moods = await response.json();
+            displayMoodEntries(moods);
+          } else {
+            throw new Error('Failed to fetch mood entries');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to fetch mood entries. Please try again.');
+        }
+      }
+
+      function displayMoodEntries(moods) {
+        const moodEntriesDiv = document.getElementById('moodEntries');
+        if (moods.length === 0) {
+          moodEntriesDiv.innerHTML =
+            '<p>No mood history available. Start tracking your moods!</p>';
+        } else {
+          moodEntriesDiv.innerHTML = moods
+            .map(
+              (mood) => `
+                  <div class="mood-entry">
+                      <p>Date: ${new Date(mood.datetime).toLocaleString()}</p>
+                      <p>Rating: ${mood.rating}</p>
+                      <p>Comment: ${mood.comment || 'No comment'}</p>
+                  </div>
+              `
+            )
+            .join('');
+        }
+      }
+
+      // Logout functionality
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        window.location.href = 'index.html';
+      });
+
+      // Fetch mood entries when the page loads
+      fetchMoodEntries();
+    </script>
+  </body>
+</html>

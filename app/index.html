@@ -3,55 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Register</title>
+    <title>Mood Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <h2>Register</h2>
-    <form id="registerForm">
-      <label for="username">Name:</label>
-      <input type="text" id="name" name="name" required /><br /><br />
-      <label for="email">Email:</label>
-      <input type="email" id="email" name="email" required /><br /><br />
-      <label for="password">Password:</label>
-      <input
-        type="password"
-        id="password"
-        name="password"
-        required
-      /><br /><br />
-      <button type="submit">Register</button>
-    </form>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="#">Features</a></li>
+          <li><a href="#">Pricing</a></li>
+          <li><a href="#">About</a></li>
+          <li><a href="login.html">Login</a></li>
+        </ul>
+      </nav>
+    </header>
 
+    <section class="hero">
+      <h1>Track Your Mood, Discover Patterns</h1>
+      <p>
+        Gain insights into your emotional well-being with our intuitive
+        mood-tracking tool.
+      </p>
+      <a href="register.html" class="cta"
+        ><button class="cta">Get Started</button></a
+      >
+    </section>
+
+    <section class="features">
+      <div class="feature-card">
+        <img src="icon1.png" alt="Daily Mood Entries" />
+        <h3>Daily Mood Entries</h3>
+        <p>Log how you feel every day.</p>
+      </div>
+      <div class="feature-card">
+        <img src="icon2.png" alt="Detailed Analytics" />
+        <h3>Detailed Analytics</h3>
+        <p>Visualize your mood trends over time.</p>
+      </div>
+      <div class="feature-card">
+        <img src="icon3.png" alt="Personal Insights" />
+        <h3>Personal Insights</h3>
+        <p>Receive personalized tips based on your data.</p>
+      </div>
+    </section>
+
+    <script src="script.js"></script>
     <script>
-      document
-        .getElementById('registerForm')
-        .addEventListener('submit', async (event) => {
-          event.preventDefault();
-
-          const name = document.getElementById('name').value;
-          const email = document.getElementById('email').value;
-          const password = document.getElementById('password').value;
-
-          try {
-            const response = await fetch('/register', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ name, email, password }),
-            });
-
-            if (response.ok) {
-              alert('Registration successful!');
-            } else {
-              const errorData = await response.json();
-              alert('Error: ' + errorData.error);
-            }
-          } catch (error) {
-            console.error('Error during registration:', error);
-            alert('An error occurred. Please try again.');
-          }
-        });
+      // Check if user is logged in and redirect before loading the page
+      (function () {
+        const token = localStorage.getItem('token');
+        if (token) {
+          window.location.replace('dashboard.html');
+        }
+      })();
     </script>
   </body>
 </html>

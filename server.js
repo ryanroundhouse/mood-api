@@ -4,10 +4,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const port = 3000;
 const winston = require('winston');
+const fs = require('fs');
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -299,13 +301,6 @@ app.get('/moods', authenticateToken, (req, res) => {
   );
 });
 
-// Serve static content from the /app folder
-app.use(express.static('app'));
-
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/app/index.html');
-});
-
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error(err.stack);
@@ -393,4 +388,16 @@ app.post('/reset-password/:token', (req, res) => {
       );
     }
   );
+});
+
+// Serve static content from the /app folder
+app.use(express.static('app'));
+
+app.get('*', (req, res) => {
+  const filePath = path.join(__dirname, 'app', req.path);
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.sendFile(path.join(__dirname, 'app', 'index.html'));
+  }
 });

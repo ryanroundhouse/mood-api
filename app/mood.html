@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Submit Mood - MoodTracker</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .mood-options {
+        display: flex;
+        justify-content: space-around;
+        margin-bottom: 20px;
+      }
+      .mood-option {
+        font-size: 2rem;
+        cursor: pointer;
+        opacity: 0.5;
+        transition: opacity 0.3s ease;
+      }
+      .mood-option.selected {
+        opacity: 1;
+      }
+      #submitMood {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        font-size: 1rem;
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      #submitMood:hover {
+        background-color: #5a79bc;
+      }
+      #commentBox {
+        width: 100%;
+        height: 100px;
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        resize: vertical;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+    </header>
+
+    <section class="hero dashboard-hero">
+      <h1>How was your day?</h1>
+      <p>Select the emoji that best represents your mood today.</p>
+    </section>
+
+    <section class="dashboard-container">
+      <div class="mood-options">
+        <span class="mood-option" data-rating="0">😢</span>
+        <span class="mood-option" data-rating="1">😕</span>
+        <span class="mood-option" data-rating="2">😐</span>
+        <span class="mood-option" data-rating="3">🙂</span>
+        <span class="mood-option" data-rating="4">😄</span>
+      </div>
+      <textarea
+        id="commentBox"
+        placeholder="Optional: Add a comment about your mood"
+      ></textarea>
+      <button id="submitMood">Submit Mood</button>
+    </section>
+
+    <script>
+      // Get URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const rating = urlParams.get('rating');
+      const authCode = urlParams.get('auth_code');
+
+      // Pre-select the mood option from the email
+      if (rating !== null) {
+        document
+          .querySelector(`.mood-option[data-rating="${rating}"]`)
+          .classList.add('selected');
+      }
+
+      // Allow user to change selection
+      document.querySelectorAll('.mood-option').forEach((option) => {
+        option.addEventListener('click', () => {
+          document
+            .querySelectorAll('.mood-option')
+            .forEach((opt) => opt.classList.remove('selected'));
+          option.classList.add('selected');
+        });
+      });
+
+      // Submit mood
+      document
+        .getElementById('submitMood')
+        .addEventListener('click', async () => {
+          const selectedMood = document.querySelector('.mood-option.selected');
+          if (!selectedMood) {
+            alert('Please select a mood before submitting.');
+            return;
+          }
+
+          const rating = selectedMood.getAttribute('data-rating');
+          const comment = document.getElementById('commentBox').value;
+
+          try {
+            const response = await fetch(`/mood/${authCode}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                rating: parseInt(rating),
+                comment: comment,
+              }),
+            });
+
+            if (response.ok) {
+              alert('Mood submitted successfully!');
+              window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
+            } else {
+              throw new Error('Failed to submit mood');
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to submit mood. Please try again.');
+          }
+        });
+    </script>
+  </body>
+</html>

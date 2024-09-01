@@ -84,6 +84,116 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Endpoint to post mood using one-time auth code
+app.post('/mood/:authCode', (req, res) => {
+  const { authCode } = req.params;
+  const { rating, comment } = req.body;
+
+  logger.info(`Attempting to post mood with auth code: ${authCode}`);
+
+  db.get(
+    `SELECT userId, expiresAt FROM mood_auth_codes WHERE authCode = ?`,
+    [authCode],
+    (err, row) => {
+      if (err) {
+        logger.error('Error verifying mood auth code:', err);
+        return res.status(500).json({ error: 'Error verifying auth code' });
+      }
+
+      if (!row) {
+        logger.warn(`Invalid auth code used: ${authCode}`);
+        return res.status(401).json({ error: 'Invalid auth code' });
+      }
+
+      if (Date.now() > row.expiresAt) {
+        const now = Date.now();
+        logger.warn(
+          `Expired auth code used: ${authCode}. Current time: ${now}, Expiration time: ${row.expiresAt}`
+        );
+        return res.status(401).json({ error: 'Auth code has expired' });
+      }
+
+      const userId = row.userId;
+      const datetime = new Date().toISOString();
+
+      logger.info(`Posting mood for user ${userId} at ${datetime}`);
+
+      // Check if a mood already exists for this user on this day
+      const today = new Date(datetime).toISOString().split('T')[0];
+      db.get(
+        `SELECT id FROM moods WHERE userId = ? AND DATE(datetime) = DATE(?)`,
+        [userId, today],
+        (err, row) => {
+          if (err) {
+            logger.error('Error checking existing mood:', err);
+            return res
+              .status(500)
+              .json({ error: 'Error checking existing mood' });
+          }
+
+          if (row) {
+            // Update existing mood
+            db.run(
+              `UPDATE moods SET rating = ?, comment = ?, datetime = ? WHERE id = ?`,
+              [rating, comment, datetime, row.id],
+              (updateErr) => {
+                if (updateErr) {
+                  logger.error('Error updating mood:', updateErr);
+                  return res.status(500).json({ error: 'Error updating mood' });
+                }
+                logger.info(`Mood updated successfully for user ${userId}`);
+                deleteAuthCodeAndRespond('Mood updated successfully');
+              }
+            );
+          } else {
+            // Insert new mood
+            db.run(
+              `INSERT INTO moods (userId, datetime, rating, comment) VALUES (?, ?, ?, ?)`,
+              [userId, datetime, rating, comment],
+              (insertErr) => {
+                if (insertErr) {
+                  logger.error('Error posting mood:', insertErr);
+                  return res.status(500).json({ error: 'Error posting mood' });
+                }
+                logger.info(`Mood posted successfully for user ${userId}`);
+                deleteAuthCodeAndRespond('Mood posted successfully');
+              }
+            );
+          }
+        }
+      );
+
+      function deleteAuthCodeAndRespond(message) {
+        // Delete the used auth code
+        db.run(
+          `DELETE FROM mood_auth_codes WHERE authCode = ?`,
+          [authCode],
+          (deleteErr) => {
+            if (deleteErr) {
+              logger.error('Error deleting used auth code:', deleteErr);
+            } else {
+              logger.info(`Auth code ${authCode} deleted after successful use`);
+            }
+          }
+        );
+
+        res.status(201).json({ message: message });
+      }
+    }
+  );
+});
+
+// Create mood_auth_codes table if it doesn't exist
+db.run(`
+  CREATE TABLE IF NOT EXISTS mood_auth_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    authCode TEXT NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    FOREIGN KEY (userId) REFERENCES users(id)
+  )
+`);
+
 // Updated User registration
 app.post(
   '/register',

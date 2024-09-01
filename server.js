@@ -9,13 +9,25 @@ const app = express();
 const port = 3000;
 
 // MongoDB connection
+const MONGODB_USERNAME = process.env.MONGODB_USERNAME;
+const MONGODB_PASSWORD = process.env.MONGODB_PASSWORD;
+const MONGODB_CLUSTER_URL = process.env.MONGODB_CLUSTER_URL;
+// Gmail credentials
+const GMAIL_USERNAME = process.env.EMAIL_USERNAME;
+const GMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
+// JWT
+const JWT_SECRET = process.env.JWT_SECRET;
+
 mongoose
-  .connect('mongodb://localhost:27017/moodtracker', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+  .connect(
+    `mongodb+srv://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@${MONGODB_CLUSTER_URL}/moodtracker?retryWrites=true&w=majority`,
+    {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    }
+  )
+  .then(() => console.log('Connected to MongoDB Atlas'))
+  .catch((err) => console.error('MongoDB Atlas connection error:', err));
 
 // Updated User model
 const User = mongoose.model(
@@ -44,8 +56,6 @@ const Mood = mongoose.model(
 
 app.use(express.json());
 
-const JWT_SECRET = 'your_jwt_secret'; // In production, use an environment variable
-
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -60,12 +70,12 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Nodemailer transporter setup (replace with your email service details)
+// Nodemailer transporter setup
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'your-email@gmail.com',
-    pass: 'your-email-password',
+    user: GMAIL_USERNAME,
+    pass: GMAIL_PASSWORD,
   },
 });
 
@@ -109,6 +119,7 @@ app.post(
           'User created successfully. Please check your email to verify your account.',
       });
     } catch (error) {
+      console.error('Error during registration:', error);
       if (error.code === 11000) {
         return res.status(400).json({ error: 'Email already exists' });
       }
@@ -220,6 +231,13 @@ app.get('/moods', authenticateToken, async (req, res) => {
     console.error('Error fetching moods:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Serve static content from the /app folder
+app.use(express.static('app'));
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/app/index.html');
 });
 
 // Error handling middleware

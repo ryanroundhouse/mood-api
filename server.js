@@ -318,7 +318,7 @@ app.post(
   '/mood',
   authenticateToken,
   [
-    body('datetime').isISO8601().toDate(),
+    body('datetime').optional().isISO8601().toDate(),
     body('rating').isInt({ min: 0, max: 5 }),
     body('comment').optional().isString().trim().isLength({ max: 500 }),
   ],
@@ -328,8 +328,13 @@ app.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { datetime, rating, comment } = req.body;
+    let { datetime, rating, comment } = req.body;
     const userId = req.user.id;
+
+    // If no datetime is supplied, use today's datetime
+    if (!datetime) {
+      datetime = new Date().toISOString();
+    }
 
     // Get the start and end of the day for the given datetime
     const startOfDay = new Date(datetime);

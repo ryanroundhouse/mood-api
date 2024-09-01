@@ -24,6 +24,20 @@
 
     <section class="dashboard-container">
       <div id="moodEntries"></div>
+
+      <h2>Submit Today's Mood</h2>
+      <div class="mood-options">
+        <span class="mood-option" data-rating="0">😢</span>
+        <span class="mood-option" data-rating="1">😕</span>
+        <span class="mood-option" data-rating="2">😐</span>
+        <span class="mood-option" data-rating="3">🙂</span>
+        <span class="mood-option" data-rating="4">😄</span>
+      </div>
+      <textarea
+        id="commentBox"
+        placeholder="Optional: Add a comment about your mood"
+      ></textarea>
+      <button id="submitMood">Submit Mood</button>
     </section>
 
     <script>
@@ -79,6 +93,53 @@
         localStorage.removeItem('token');
         window.location.href = 'index.html';
       });
+
+      // Mood submission functionality
+      document.querySelectorAll('.mood-option').forEach((option) => {
+        option.addEventListener('click', () => {
+          document
+            .querySelectorAll('.mood-option')
+            .forEach((opt) => opt.classList.remove('selected'));
+          option.classList.add('selected');
+        });
+      });
+
+      document
+        .getElementById('submitMood')
+        .addEventListener('click', async () => {
+          const selectedMood = document.querySelector('.mood-option.selected');
+          if (!selectedMood) {
+            alert('Please select a mood before submitting.');
+            return;
+          }
+
+          const rating = selectedMood.getAttribute('data-rating');
+          const comment = document.getElementById('commentBox').value;
+
+          try {
+            const response = await fetch('/mood', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                rating: parseInt(rating),
+                comment: comment,
+              }),
+            });
+
+            if (response.ok) {
+              alert('Mood submitted successfully!');
+              fetchMoodEntries(); // Refresh the mood entries
+            } else {
+              throw new Error('Failed to submit mood');
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to submit mood. Please try again.');
+          }
+        });
 
       // Fetch mood entries when the page loads
       fetchMoodEntries();

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About MoodTracker</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .about-hero {
+        background: linear-gradient(135deg, #6a89cc, #b8e994);
+        color: #fff;
+        text-align: center;
+        padding: 60px 20px;
+      }
+      .about-hero h1 {
+        font-size: 2.5em;
+        margin-bottom: 20px;
+      }
+      .about-hero p {
+        font-size: 1.2em;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .about-content {
+        padding: 40px 20px;
+      }
+      .content-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
+      .about-card {
+        flex-basis: calc(33.333% - 20px);
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .about-card h2 {
+        color: #333;
+        margin-bottom: 15px;
+      }
+      .about-card p {
+        color: #666;
+        line-height: 1.6;
+      }
+      @media (max-width: 768px) {
+        .about-card {
+          flex-basis: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+      <nav>
+        <ul>
+          <li><a href="#">Features</a></li>
+          <li><a href="#">Pricing</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="login.html">Login</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section class="hero about-hero">
+      <h1>About MoodTracker</h1>
+      <p>
+        Learn more about our mission to help you understand and improve your
+        emotional well-being.
+      </p>
+    </section>
+
+    <section class="about-content">
+      <div class="content-wrapper">
+        <div class="about-card">
+          <h2>Our Story</h2>
+          <p>
+            Founded in 2024, MoodTracker emerged from a simple yet powerful
+            idea: to help individuals gain valuable insights into their
+            emotional health. We firmly believe that understanding personal mood
+            patterns is a crucial first step towards enhancing overall mental
+            well-being.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <h2>Our Mission</h2>
+          <p>
+            At MoodTracker, our mission is to provide a user-friendly and
+            intuitive tool that empowers people to track their moods, identify
+            meaningful patterns, and implement positive changes in their daily
+            lives. We're committed to supporting our users on their journey to
+            improved emotional awareness and health.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <h2>Meet the Founder</h2>
+          <p>
+            MoodTracker was created by Ryan Graham, a passionate entrepreneur
+            with a keen interest in personal growth and emotional intelligence.
+            Recognizing the challenges of modern life and the importance of
+            self-reflection, Ryan developed MoodTracker to help people uncover
+            valuable insights about themselves. By identifying subtle trends
+            that often go unnoticed, MoodTracker aims to provide opportunities
+            for positive life changes and enhanced well-being.
+          </p>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

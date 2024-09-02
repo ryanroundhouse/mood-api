@@ -5,6 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard - MoodTracker</title>
     <link rel="stylesheet" href="styles.css" />
+    <style>
+      @media (min-width: 1024px) {
+        .dashboard-container {
+          width: 33.33%;
+          margin: 0 auto;
+        }
+      }
+      .mood-options {
+        display: flex;
+        justify-content: space-around;
+        margin-bottom: 20px;
+      }
+      .mood-option {
+        font-size: 2rem;
+        cursor: pointer;
+        opacity: 0.5;
+        transition: opacity 0.3s ease;
+      }
+      .mood-option.selected {
+        opacity: 1;
+      }
+      #submitMood {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        font-size: 1rem;
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      #submitMood:hover {
+        background-color: #5a79bc;
+      }
+      #commentBox {
+        width: 100%;
+        height: 100px;
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        resize: vertical;
+        maxlength: 500;
+      }
+    </style>
   </head>
   <body>
     <header>
@@ -22,9 +68,11 @@
       <p>Track your mood and discover patterns over time.</p>
     </section>
 
-    <section class="dashboard-container">
+    <section class="dashboard-container" style="width: 100%">
       <div id="moodEntries"></div>
+    </section>
 
+    <section class="dashboard-container">
       <h2>Submit Today's Mood</h2>
       <div class="mood-options">
         <span class="mood-option" data-rating="0">😢</span>
@@ -36,6 +84,7 @@
       <textarea
         id="commentBox"
         placeholder="Optional: Add a comment about your mood"
+        maxlength="500"
       ></textarea>
       <button id="submitMood">Submit Mood</button>
     </section>

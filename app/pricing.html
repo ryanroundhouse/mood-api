@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MoodTracker Pricing</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .pricing-hero {
+        background: linear-gradient(135deg, #6a89cc, #b8e994);
+        color: #fff;
+        text-align: center;
+        padding: 60px 20px;
+      }
+      .pricing-hero h1 {
+        font-size: 2.5em;
+        margin-bottom: 20px;
+      }
+      .pricing-hero p {
+        font-size: 1.2em;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .pricing-content {
+        padding: 40px 20px;
+      }
+      .content-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
+      .pricing-card {
+        flex-basis: calc(33.333% - 20px);
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+      }
+      .pricing-card h2 {
+        color: #333;
+        margin-bottom: 15px;
+      }
+      .pricing-card .price {
+        font-size: 2em;
+        font-weight: bold;
+        color: #6a89cc;
+        margin-bottom: 15px;
+      }
+      .pricing-card ul {
+        list-style-type: none;
+        padding: 0;
+        margin-bottom: 20px;
+        flex-grow: 1;
+      }
+      .pricing-card li {
+        margin-bottom: 10px;
+      }
+      .pricing-card .cta {
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: #6a89cc;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: background-color 0.3s ease;
+        align-self: center;
+        width: fit-content;
+      }
+      .pricing-card .cta:hover {
+        background-color: #5a79bc;
+      }
+      @media (max-width: 768px) {
+        .pricing-card {
+          flex-basis: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+      <nav>
+        <ul>
+          <li><a href="#">Features</a></li>
+          <li><a href="pricing.html">Pricing</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="login.html">Login</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section class="hero pricing-hero">
+      <h1>Choose Your Plan</h1>
+      <p>
+        Select the perfect plan to start your journey towards better emotional
+        well-being.
+      </p>
+    </section>
+
+    <section class="pricing-content">
+      <div class="content-wrapper">
+        <div class="pricing-card">
+          <h2>Basic</h2>
+          <div class="price">Free</div>
+          <ul>
+            <li>Daily mood tracking</li>
+            <li>Basic insights</li>
+            <li>7-day history</li>
+            <li>Community support</li>
+          </ul>
+          <a href="register.html" class="cta">Start Your Journey</a>
+        </div>
+
+        <div class="pricing-card featured">
+          <span class="best-value">Best Value</span>
+          <h2>Pro</h2>
+          <div class="price">$4.99 / month</div>
+          <div class="savings">Save 50% - Limited Time Offer!</div>
+          <ul>
+            <li><strong>Everything in Basic, plus:</strong></li>
+            <li>Advanced AI-powered insights</li>
+            <li>Unlimited history & data export</li>
+            <li>Priority email support</li>
+            <li>Customizable tags and notes</li>
+            <li>Mood trend predictions</li>
+            <li>Guided meditation sessions</li>
+          </ul>
+          <a href="#" class="cta">Unlock Full Potential</a>
+        </div>
+
+        <div class="pricing-card">
+          <h2>Enterprise</h2>
+          <div class="price">Custom Solution</div>
+          <ul>
+            <li>Tailored features for your organization</li>
+            <li>Advanced analytics and reporting</li>
+            <li>Dedicated account manager</li>
+            <li>API access and integrations</li>
+            <li>Employee wellness programs</li>
+          </ul>
+          <a href="#" class="cta">Transform Your Workplace</a>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

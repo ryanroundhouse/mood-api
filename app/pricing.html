@@ -41,13 +41,15 @@
         text-align: center;
         display: flex;
         flex-direction: column;
+        position: relative; /* Added for positioning the banner */
       }
       .pricing-card h2 {
         color: #333;
         margin-bottom: 15px;
+        font-size: 2.5em; /* Increased font size for headers */
       }
       .pricing-card .price {
-        font-size: 2em;
+        font-size: 1.5em; /* Decreased font size for prices */
         font-weight: bold;
         color: #6a89cc;
         margin-bottom: 15px;
@@ -75,6 +77,16 @@
       .pricing-card .cta:hover {
         background-color: #5a79bc;
       }
+      .pricing-card .best-value-banner {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background-color: red;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-weight: bold;
+      }
       @media (max-width: 768px) {
         .pricing-card {
           flex-basis: 100%;
@@ -87,7 +99,7 @@
       <a href="index.html"><div class="logo">MoodTracker</div></a>
       <nav>
         <ul>
-          <li><a href="#">Features</a></li>
+          <li><a href="features.html">Features</a></li>
           <li><a href="pricing.html">Pricing</a></li>
           <li><a href="about.html">About</a></li>
           <li><a href="login.html">Login</a></li>
@@ -118,7 +130,7 @@
         </div>
 
         <div class="pricing-card featured">
-          <span class="best-value">Best Value</span>
+          <div class="best-value-banner">Best Value</div>
           <h2>Pro</h2>
           <div class="price">$4.99 / month</div>
           <div class="savings">Save 50% - Limited Time Offer!</div>

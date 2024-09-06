@@ -50,6 +50,89 @@
         resize: vertical;
         maxlength: 500;
       }
+      #calendar {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 5px;
+      }
+      .calendar-day {
+        padding: 10px;
+        text-align: center;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      .has-mood {
+        cursor: pointer;
+      }
+      .mood-0 {
+        background-color: #ffb3ba;
+      }
+      .mood-1 {
+        background-color: #ffdfba;
+      }
+      .mood-2 {
+        background-color: #ffffba;
+      }
+      .mood-3 {
+        background-color: #baffc9;
+      }
+      .mood-4 {
+        background-color: #bae1ff;
+      }
+      .calendar-nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .calendar-nav button {
+        padding: 5px 10px;
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .calendar-nav button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      .calendar-legend {
+        display: flex;
+        justify-content: center;
+        margin-top: 20px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin: 0 10px;
+      }
+      .legend-color {
+        width: 20px;
+        height: 20px;
+        margin-right: 5px;
+        border-radius: 50%;
+      }
+      .collapsible {
+        cursor: pointer;
+        padding: 10px;
+        width: 100%;
+        border: none;
+        text-align: left;
+        outline: none;
+        font-size: 15px;
+      }
+      .active,
+      .collapsible:hover {
+        background-color: #f1f1f1;
+      }
+      .content {
+        padding: 0 18px;
+        display: none;
+        overflow: hidden;
+        background-color: #f1f1f1;
+      }
     </style>
   </head>
   <body>
@@ -68,25 +151,56 @@
       <p>Track your mood and discover patterns over time.</p>
     </section>
 
-    <section class="dashboard-container" style="width: 100%">
-      <div id="moodEntries"></div>
+    <section class="dashboard-container">
+      <button class="collapsible" id="moodSectionTitle">
+        Submit Today's Mood
+      </button>
+      <div class="content">
+        <div class="mood-options">
+          <span class="mood-option" data-rating="0">😢</span>
+          <span class="mood-option" data-rating="1">😕</span>
+          <span class="mood-option" data-rating="2">😐</span>
+          <span class="mood-option" data-rating="3">🙂</span>
+          <span class="mood-option" data-rating="4">😄</span>
+        </div>
+        <textarea
+          id="commentBox"
+          placeholder="Optional: Add a comment about your mood"
+          maxlength="500"
+        ></textarea>
+        <button id="submitMood">Submit Mood</button>
+      </div>
     </section>
 
-    <section class="dashboard-container">
-      <h2 id="moodSectionTitle">Submit Today's Mood</h2>
-      <div class="mood-options">
-        <span class="mood-option" data-rating="0">😢</span>
-        <span class="mood-option" data-rating="1">😕</span>
-        <span class="mood-option" data-rating="2">😐</span>
-        <span class="mood-option" data-rating="3">🙂</span>
-        <span class="mood-option" data-rating="4">😄</span>
+    <section class="dashboard-container" style="width: 100%">
+      <div class="calendar-nav">
+        <button id="prevMonth">&lt; Previous</button>
+        <span id="currentMonth"></span>
+        <button id="nextMonth">Next &gt;</button>
       </div>
-      <textarea
-        id="commentBox"
-        placeholder="Optional: Add a comment about your mood"
-        maxlength="500"
-      ></textarea>
-      <button id="submitMood">Submit Mood</button>
+      <div id="calendar"></div>
+      <div class="calendar-legend">
+        <div class="legend-item">
+          <div class="legend-color mood-0"></div>
+          <span>Very Sad</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color mood-1"></div>
+          <span>Sad</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color mood-2"></div>
+          <span>Neutral</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color mood-3"></div>
+          <span>Happy</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color mood-4"></div>
+          <span>Very Happy</span>
+        </div>
+      </div>
     </section>
 
     <script>
@@ -95,6 +209,9 @@
       if (!token) {
         window.location.href = 'login.html';
       }
+
+      let currentDate = new Date();
+      const maxPastMonths = 11;
 
       // Fetch mood entries
       async function fetchMoodEntries() {
@@ -107,8 +224,8 @@
 
           if (response.ok) {
             const moods = await response.json();
-            displayMoodEntries(moods);
             preSelectTodayMood(moods);
+            displayCalendar(moods);
           } else {
             throw new Error('Failed to fetch mood entries');
           }
@@ -118,25 +235,99 @@
         }
       }
 
-      function displayMoodEntries(moods) {
-        const moodEntriesDiv = document.getElementById('moodEntries');
-        if (moods.length === 0) {
-          moodEntriesDiv.innerHTML =
-            '<p>No mood history available. Start tracking your moods!</p>';
-        } else {
-          moodEntriesDiv.innerHTML = moods
-            .map(
-              (mood) => `
-                  <div class="mood-entry">
-                      <p>Date: ${new Date(mood.datetime).toLocaleString()}</p>
-                      <p>Rating: ${mood.rating}</p>
-                      <p>Comment: ${mood.comment || 'No comment'}</p>
-                  </div>
-              `
-            )
-            .join('');
+      function displayCalendar(moods) {
+        const calendarDiv = document.getElementById('calendar');
+        const currentMonth = currentDate.getMonth();
+        const currentYear = currentDate.getFullYear();
+        const daysInMonth = new Date(
+          currentYear,
+          currentMonth + 1,
+          0
+        ).getDate();
+
+        calendarDiv.innerHTML = '';
+
+        // Update current month display
+        document.getElementById(
+          'currentMonth'
+        ).textContent = `${currentDate.toLocaleString('default', {
+          month: 'long',
+        })} ${currentYear}`;
+
+        // Add day of week headers
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        daysOfWeek.forEach((day) => {
+          const dayHeader = document.createElement('div');
+          dayHeader.classList.add('calendar-header');
+          dayHeader.textContent = day;
+          calendarDiv.appendChild(dayHeader);
+        });
+
+        // Add empty divs for days before the 1st of the month
+        const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+        for (let i = 0; i < firstDayOfMonth; i++) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.classList.add('calendar-day', 'empty');
+          calendarDiv.appendChild(emptyDiv);
         }
+
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dayDiv = document.createElement('div');
+          dayDiv.classList.add('calendar-day');
+          dayDiv.textContent = i;
+
+          const dayDate = new Date(currentYear, currentMonth, i);
+          const mood = moods.find((m) => {
+            const moodDate = new Date(m.datetime);
+            return (
+              moodDate.getDate() === dayDate.getDate() &&
+              moodDate.getMonth() === dayDate.getMonth() &&
+              moodDate.getFullYear() === dayDate.getFullYear()
+            );
+          });
+
+          if (mood) {
+            dayDiv.classList.add('has-mood', `mood-${mood.rating}`);
+            dayDiv.title = `Mood: ${mood.rating}, Comment: ${
+              mood.comment || 'No comment'
+            }`;
+          }
+
+          calendarDiv.appendChild(dayDiv);
+        }
+
+        // Update navigation buttons
+        updateNavigationButtons();
       }
+
+      function updateNavigationButtons() {
+        const prevButton = document.getElementById('prevMonth');
+        const nextButton = document.getElementById('nextMonth');
+        const today = new Date();
+
+        // Disable next button if current month is the current month
+        nextButton.disabled =
+          currentDate.getMonth() === today.getMonth() &&
+          currentDate.getFullYear() === today.getFullYear();
+
+        // Disable prev button if we're 11 months in the past
+        const elevenMonthsAgo = new Date(
+          today.getFullYear(),
+          today.getMonth() - maxPastMonths,
+          1
+        );
+        prevButton.disabled = currentDate <= elevenMonthsAgo;
+      }
+
+      document.getElementById('prevMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        fetchMoodEntries();
+      });
+
+      document.getElementById('nextMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        fetchMoodEntries();
+      });
 
       function preSelectTodayMood(moods) {
         const today = new Date();
@@ -155,6 +346,9 @@
           document.getElementById('moodSectionTitle').textContent =
             "Update Today's Mood";
           document.getElementById('submitMood').textContent = 'Update Mood';
+          document.querySelector('.content').style.display = 'none';
+        } else {
+          document.querySelector('.content').style.display = 'block';
         }
       }
 
@@ -208,6 +402,19 @@
           } catch (error) {
             console.error('Error:', error);
             alert('Failed to submit mood. Please try again.');
+          }
+        });
+
+      // Collapsible functionality
+      document
+        .querySelector('.collapsible')
+        .addEventListener('click', function () {
+          this.classList.toggle('active');
+          var content = this.nextElementSibling;
+          if (content.style.display === 'block') {
+            content.style.display = 'none';
+          } else {
+            content.style.display = 'block';
           }
         });
 

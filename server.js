@@ -453,7 +453,7 @@ app.post('/forgot-password', (req, res) => {
           return res.status(500).json({ error: 'Internal server error' });
         }
 
-        const resetLink = `http://localhost:${port}/reset-password/${resetToken}`;
+        const resetLink = `http://localhost:${port}/reset-password.html?token=${resetToken}`;
         transporter.sendMail({
           to: email,
           subject: 'Password Reset',

@@ -56,6 +56,7 @@ db.serialize(() => {
 // Gmail credentials
 const GMAIL_USERNAME = process.env.GMAIL_USERNAME;
 const GMAIL_PASSWORD = process.env.GMAIL_PASSWORD;
+const MY_EMAIL = process.env.EMAIL_ADDRESS;
 // JWT
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -516,3 +517,51 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'app', 'index.html'));
   }
 });
+
+// Add this near the other middleware
+app.use(express.urlencoded({ extended: true }));
+
+// Contact form submission endpoint
+app.post(
+  '/contact',
+  [
+    body('name').trim().isLength({ min: 1, max: 100 }).escape(),
+    body('email').isEmail().normalizeEmail(),
+    body('subject').trim().isLength({ min: 1, max: 200 }).escape(),
+    body('message').trim().isLength({ min: 1, max: 1000 }).escape(),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { name, email, subject, message } = req.body;
+
+    // Send email
+    transporter.sendMail(
+      {
+        from: GMAIL_USERNAME,
+        to: MY_EMAIL, // Send to yourself or a designated contact email
+        subject: `New Contact Form Submission: ${subject}`,
+        html: `
+          <h3>New contact form submission</h3>
+          <p><strong>Name:</strong> ${name}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Subject:</strong> ${subject}</p>
+          <p><strong>Message:</strong></p>
+          <p>${message}</p>
+        `,
+      },
+      (error, info) => {
+        if (error) {
+          logger.error('Error sending contact form email:', error);
+          return res.status(500).json({ error: 'Error sending message' });
+        }
+
+        logger.info(`Contact form submission from ${email}`);
+        res.status(200).json({ message: 'Message sent successfully' });
+      }
+    );
+  }
+);

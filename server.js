@@ -10,6 +10,7 @@ const app = express();
 const port = 3000;
 const winston = require('winston');
 const fs = require('fs');
+const mg = require('nodemailer-mailgun-transport');
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -53,12 +54,26 @@ db.serialize(() => {
   `);
 });
 
-// Gmail credentials
-const GMAIL_USERNAME = process.env.GMAIL_USERNAME;
-const GMAIL_PASSWORD = process.env.GMAIL_PASSWORD;
-const MY_EMAIL = process.env.EMAIL_ADDRESS;
+// Set the base URL from environment variable or default to localhost
+const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
+
 // JWT
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// email credentials
+const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
+const EMAIL_DOMAIN = process.env.EMAIL_DOMAIN;
+const MY_EMAIL = process.env.EMAIL_ADDRESS;
+
+// Nodemailer transporter setup
+const auth = {
+  auth: {
+    api_key: MAILGUN_API_KEY, // Replace with your Mailgun API key
+    domain: EMAIL_DOMAIN, // Replace with your Mailgun domain
+  },
+};
+
+const transporter = nodemailer.createTransport(mg(auth));
 
 app.use(express.json());
 
@@ -75,15 +90,6 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
-
-// Nodemailer transporter setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: GMAIL_USERNAME,
-    pass: GMAIL_PASSWORD,
-  },
-});
 
 // Endpoint to post mood using one-time auth code
 app.post('/mood/:authCode', (req, res) => {
@@ -226,9 +232,9 @@ app.post(
           }
 
           // Send verification email
-          const verificationLink = `http://localhost:${port}/verify/${verificationToken}`;
+          const verificationLink = `${BASE_URL}/verify/${verificationToken}`;
           transporter.sendMail({
-            from: 'moodmailer@gmail.com',
+            from: 'noreply@ryangraham.ca',
             to: email,
             subject: 'Verify your email',
             html: `Please click this link to verify your email: <a href="${verificationLink}">${verificationLink}</a>`,
@@ -453,8 +459,9 @@ app.post('/forgot-password', (req, res) => {
           return res.status(500).json({ error: 'Internal server error' });
         }
 
-        const resetLink = `http://localhost:${port}/reset-password.html?token=${resetToken}`;
+        const resetLink = `${BASE_URL}/reset-password.html?token=${resetToken}`;
         transporter.sendMail({
+          from: 'noreply@ryangraham.ca',
           to: email,
           subject: 'Password Reset',
           html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a>`,

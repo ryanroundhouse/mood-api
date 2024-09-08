@@ -16,6 +16,7 @@
     "express-validator": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.14",
+    "nodemailer-mailgun-transport": "^2.1.5",
     "nodemon": "^3.1.4",
     "sqlite3": "^5.1.7",
     "winston": "^3.14.2"

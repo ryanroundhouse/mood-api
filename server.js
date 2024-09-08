@@ -63,7 +63,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // email credentials
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const EMAIL_DOMAIN = process.env.EMAIL_DOMAIN;
-const NOREPLY_EMAIL = process.env.NOREPLYEMAIL;
+const NOREPLY_EMAIL = process.env.NOREPLY_EMAIL;
 const MY_EMAIL = process.env.EMAIL_ADDRESS;
 
 // Nodemailer transporter setup
@@ -549,7 +549,7 @@ app.post(
     // Send email
     transporter.sendMail(
       {
-        from: GMAIL_USERNAME,
+        from: NOREPLY_EMAIL,
         to: MY_EMAIL, // Send to yourself or a designated contact email
         subject: `New Contact Form Submission: ${subject}`,
         html: `

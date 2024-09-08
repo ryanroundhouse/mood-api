@@ -1,5 +1,5 @@
 import sqlite3
-import smtplib
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
@@ -10,10 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Email configuration
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SENDER_EMAIL = os.getenv("GMAIL_USERNAME")
-SENDER_PASSWORD = os.getenv("GMAIL_PASSWORD")
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("EMAIL_DOMAIN")
+SENDER_EMAIL = os.getenv("NOREPLY_EMAIL")
+BASE_URL = os.getenv("MOOD_SITE_URL", "http://localhost:3000")
 
 # Database configuration
 DB_PATH = "../database.sqlite"
@@ -76,7 +76,7 @@ def send_email(to_email, auth_code):
     
     emojis = ["😢", "😕", "😐", "🙂", "😄"]
     for i, emoji in enumerate(emojis):
-        link = f"http://localhost:3000/mood.html?rating={i}&auth_code={auth_code}"
+        link = f"{BASE_URL}/mood.html?rating={i}&auth_code={auth_code}"
         html_content += f'<a href="{link}" class="mood-option">{emoji}</a>'
     
     html_content += """
@@ -86,19 +86,20 @@ def send_email(to_email, auth_code):
     </html>
     """
 
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    msg.attach(MIMEText(html_content, 'html'))
-
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
+        response = requests.post(
+            f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
+            auth=("api", MAILGUN_API_KEY),
+            data={
+                "from": f"MoodTracker <{SENDER_EMAIL}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content
+            }
+        )
+        response.raise_for_status()
         print(f"Email sent successfully to {to_email}")
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         print(f"Failed to send email to {to_email}. Error: {str(e)}")
 
 def main():

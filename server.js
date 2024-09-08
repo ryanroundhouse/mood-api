@@ -63,6 +63,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // email credentials
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const EMAIL_DOMAIN = process.env.EMAIL_DOMAIN;
+const NOREPLY_EMAIL = process.env.NOREPLYEMAIL;
 const MY_EMAIL = process.env.EMAIL_ADDRESS;
 
 // Nodemailer transporter setup
@@ -234,7 +235,7 @@ app.post(
           // Send verification email
           const verificationLink = `${BASE_URL}/verify/${verificationToken}`;
           transporter.sendMail({
-            from: 'noreply@ryangraham.ca',
+            from: NOREPLY_EMAIL,
             to: email,
             subject: 'Verify your email',
             html: `Please click this link to verify your email: <a href="${verificationLink}">${verificationLink}</a>`,
@@ -461,7 +462,7 @@ app.post('/forgot-password', (req, res) => {
 
         const resetLink = `${BASE_URL}/reset-password.html?token=${resetToken}`;
         transporter.sendMail({
-          from: 'noreply@ryangraham.ca',
+          from: NOREPLY_EMAIL,
           to: email,
           subject: 'Password Reset',
           html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a>`,

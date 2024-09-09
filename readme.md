@@ -107,6 +107,19 @@ Response:
 }
 ```
 
+The returned JWT token contains the following payload:
+- `id`: The user's unique identifier
+- `accountLevel`: The user's account level (e.g., 'basic', 'pro', 'enterprise')
+- `exp`: The token's expiration timestamp
+
+This token should be included in the `Authorization` header for all authenticated requests:
+
+```
+Authorization: Bearer your_jwt_token
+```
+
+The `accountLevel` in the token can be used for authorization purposes in your application, allowing you to restrict access to certain features based on the user's account level.
+
 ### Create/update a mood entry
 
 - **POST** `/mood`

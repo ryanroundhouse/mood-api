@@ -38,7 +38,8 @@ db.serialize(() => {
       isVerified INTEGER DEFAULT 0,
       verificationToken TEXT,
       resetPasswordToken TEXT,
-      resetPasswordExpires INTEGER
+      resetPasswordExpires INTEGER,
+      accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise'))
     )
   `);
 
@@ -78,6 +79,29 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )
   `);
+
+  // Add accountLevel column to existing users table if it doesn't exist
+  db.all(`PRAGMA table_info(users)`, (err, rows) => {
+    if (err) {
+      logger.error('Error checking users table schema:', err);
+    } else if (rows && Array.isArray(rows)) {
+      const accountLevelExists = rows.some(row => row.name === 'accountLevel');
+      if (!accountLevelExists) {
+        db.run(`
+          ALTER TABLE users
+          ADD COLUMN accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise'))
+        `, (alterErr) => {
+          if (alterErr) {
+            logger.error('Error adding accountLevel column:', alterErr);
+          } else {
+            logger.info('accountLevel column added to users table');
+          }
+        });
+      }
+    } else {
+      logger.error('Unexpected result from PRAGMA table_info(users)');
+    }
+  });
 });
 
 
@@ -121,7 +145,7 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
-    req.user = user;
+    req.user = { id: user.id, accountLevel: user.accountLevel };
     next();
   });
 };
@@ -211,6 +235,7 @@ app.put('/user/settings', authenticateToken, [
   });
 });
 
+// mood by auth code
 app.post('/mood/:authCode', (req, res) => {
   const { authCode } = req.params;
   const { rating, comment } = req.body;
@@ -309,6 +334,7 @@ app.post('/mood/:authCode', (req, res) => {
   );
 });
 
+// register
 app.post(
   '/register',
   [
@@ -372,6 +398,7 @@ app.post(
   }
 );
 
+// verify email
 app.get('/verify/:token', (req, res) => {
   const { token } = req.params;
 
@@ -407,6 +434,7 @@ app.get('/verify/:token', (req, res) => {
   );
 });
 
+// login
 app.post('/login', (req, res) => {
   const { email, password } = req.body;
 
@@ -430,12 +458,13 @@ app.post('/login', (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ id: user.id, accountLevel: user.accountLevel }, JWT_SECRET, { expiresIn: '1h' });
     logger.info(`User logged in successfully: ${email}`);
     res.json({ token });
   });
 });
 
+// mood when authenticated
 app.post(
   '/mood',
   authenticateToken,
@@ -519,6 +548,7 @@ app.post(
   }
 );
 
+// get moods
 app.get('/moods', authenticateToken, (req, res) => {
   const userId = req.user.id;
 

@@ -74,6 +74,9 @@
         </div>
         <button type="submit">Save Changes</button>
       </form>
+      <div id="exportContainer" style="display: none; margin-top: 20px;">
+        <button id="exportMoodData">Export Mood Data</button>
+      </div>
     </section>
 
     <script>
@@ -97,6 +100,16 @@
             document.getElementById('name').value = settings.name;
             document.getElementById('dailyNotifications').checked = settings.dailyNotifications;
             document.getElementById('weeklySummary').checked = settings.weeklySummary;
+
+            // Check user's account level and show export button if applicable
+            const accountLevel = JSON.parse(atob(token.split('.')[1])).accountLevel;
+            console.log(`User account level: ${accountLevel}`);
+            if (accountLevel === 'pro' || accountLevel === 'enterprise') {
+              document.getElementById('exportContainer').style.display = 'block';
+              console.log('Export button displayed for pro/enterprise user');
+            } else {
+              console.log('Export button not displayed for basic user');
+            }
           } else {
             throw new Error('Failed to fetch user settings');
           }
@@ -138,6 +151,39 @@
         }
       }
 
+      // Export mood data
+      async function exportMoodData() {
+        try {
+          const response = await fetch('/moods', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const moodData = await response.json();
+            console.log('Mood data:', moodData);
+
+            // Remove userId from each mood entry
+            const sanitizedMoodData = moodData.map(({ userId, ...rest }) => rest);
+
+            const dataStr = JSON.stringify(sanitizedMoodData, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = 'mood_data.json';
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+          } else {
+            throw new Error('Failed to export mood data');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to export mood data. Please try again.');
+        }
+      }
+
       // Logout functionality
       document.getElementById('logoutBtn').addEventListener('click', () => {
         localStorage.removeItem('token');
@@ -149,6 +195,9 @@
 
       // Add event listener for form submission
       document.getElementById('settingsForm').addEventListener('submit', updateUserSettings);
+
+      // Add event listener for mood data export
+      document.getElementById('exportMoodData').addEventListener('click', exportMoodData);
     </script>
   </body>
 </html>

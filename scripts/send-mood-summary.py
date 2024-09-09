@@ -21,7 +21,12 @@ DB_PATH = "../database.sqlite"
 def get_users():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email FROM users WHERE isVerified = 1")
+    cursor.execute("""
+        SELECT users.id, users.email 
+        FROM users 
+        JOIN notifications ON users.id = notifications.userId 
+        WHERE users.isVerified = 1 AND notifications.weeklySummary = 1
+    """)
     users = cursor.fetchall()
     conn.close()
     return users

@@ -200,6 +200,42 @@ Response:
 }
 ```
 
+### Get user settings
+
+- **GET** `/user/settings`
+
+Response:
+
+```json
+{
+"name": "John Doe",
+"dailyNotifications": true,
+"weeklySummary": true
+}
+```
+
+### Update user settings
+
+- **PUT** `/user/settings`
+
+Request:
+
+```json
+{
+"name": "John Smith",
+"dailyNotifications": false,
+"weeklySummary": true
+}
+```
+
+Response:
+
+```json
+{
+"message": "Settings updated successfully"
+}
+```
+
 ## Security
 
 - Passwords are hashed using bcrypt

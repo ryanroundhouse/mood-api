@@ -52,19 +52,55 @@ db.serialize(() => {
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER NOT NULL UNIQUE,
+      dailyNotifications INTEGER DEFAULT 1,
+      weeklySummary INTEGER DEFAULT 1,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    )
+  `);
+
+  // Populate notifications table for existing users
+  db.run(`
+    INSERT OR IGNORE INTO notifications (userId)
+    SELECT id FROM users
+  `);
+  // Create mood_auth_codes table if it doesn't exist
+  db.run(`
+  CREATE TABLE IF NOT EXISTS mood_auth_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    authCode TEXT NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    FOREIGN KEY (userId) REFERENCES users(id)
+  )
+  `);
 });
+
+
 
 // Set the base URL from environment variable or default to localhost
 const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
-
 // JWT
 const JWT_SECRET = process.env.JWT_SECRET;
-
 // email credentials
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const EMAIL_DOMAIN = process.env.EMAIL_DOMAIN;
 const NOREPLY_EMAIL = process.env.NOREPLY_EMAIL;
 const MY_EMAIL = process.env.EMAIL_ADDRESS;
+
+app.use(express.json());
+app.use(express.static('app'));
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+// Add this near the other middleware
+app.use(express.urlencoded({ extended: true }));
 
 // Nodemailer transporter setup
 const auth = {
@@ -75,8 +111,6 @@ const auth = {
 };
 
 const transporter = nodemailer.createTransport(mg(auth));
-
-app.use(express.json());
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
@@ -92,7 +126,91 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Endpoint to post mood using one-time auth code
+// Endpoint to get user settings
+app.get('/user/settings', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  db.get(
+    `SELECT users.name, notifications.dailyNotifications, notifications.weeklySummary 
+     FROM users 
+     LEFT JOIN notifications ON users.id = notifications.userId 
+     WHERE users.id = ?`,
+    [userId],
+    (err, row) => {
+      if (err) {
+        logger.error('Error fetching user settings:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      if (!row) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const userSettings = {
+        name: row.name,
+        dailyNotifications: row.dailyNotifications === 1,
+        weeklySummary: row.weeklySummary === 1
+      };
+
+      logger.info(`User settings fetched for user: ${userId}`);
+      res.json(userSettings);
+    }
+  );
+});
+
+// Endpoint to update user settings
+app.put('/user/settings', authenticateToken, [
+  body('name').optional().trim().isLength({ min: 1 }),
+  body('dailyNotifications').optional().isBoolean(),
+  body('weeklySummary').optional().isBoolean(),
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const userId = req.user.id;
+  const { name, dailyNotifications, weeklySummary } = req.body;
+
+  db.serialize(() => {
+    if (name !== undefined) {
+      db.run('UPDATE users SET name = ? WHERE id = ?', [name, userId], (err) => {
+        if (err) {
+          logger.error('Error updating user name:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+      });
+    }
+
+    if (dailyNotifications !== undefined || weeklySummary !== undefined) {
+      const updates = [];
+      const values = [];
+
+      if (dailyNotifications !== undefined) {
+        updates.push('dailyNotifications = ?');
+        values.push(dailyNotifications ? 1 : 0);
+      }
+
+      if (weeklySummary !== undefined) {
+        updates.push('weeklySummary = ?');
+        values.push(weeklySummary ? 1 : 0);
+      }
+
+      values.push(userId);
+
+      db.run(`UPDATE notifications SET ${updates.join(', ')} WHERE userId = ?`, values, (err) => {
+        if (err) {
+          logger.error('Error updating notification settings:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+      });
+    }
+
+    logger.info(`User settings updated for user: ${userId}`);
+    res.json({ message: 'Settings updated successfully' });
+  });
+});
+
 app.post('/mood/:authCode', (req, res) => {
   const { authCode } = req.params;
   const { rating, comment } = req.body;
@@ -191,18 +309,6 @@ app.post('/mood/:authCode', (req, res) => {
   );
 });
 
-// Create mood_auth_codes table if it doesn't exist
-db.run(`
-  CREATE TABLE IF NOT EXISTS mood_auth_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId INTEGER NOT NULL,
-    authCode TEXT NOT NULL,
-    expiresAt INTEGER NOT NULL,
-    FOREIGN KEY (userId) REFERENCES users(id)
-  )
-`);
-
-// Updated User registration
 app.post(
   '/register',
   [
@@ -232,6 +338,17 @@ app.post(
             return res.status(500).json({ error: 'Error registering user' });
           }
 
+          // Insert default notification settings for the new user
+          db.run(
+            `INSERT INTO notifications (userId) VALUES (?)`,
+            [this.lastID],
+            (notificationErr) => {
+              if (notificationErr) {
+                logger.error('Error inserting default notification settings:', notificationErr);
+              }
+            }
+          );
+
           // Send verification email
           const verificationLink = `${BASE_URL}/verify/${verificationToken}`;
           transporter.sendMail({
@@ -255,7 +372,6 @@ app.post(
   }
 );
 
-// New route for email verification
 app.get('/verify/:token', (req, res) => {
   const { token } = req.params;
 
@@ -291,7 +407,6 @@ app.get('/verify/:token', (req, res) => {
   );
 });
 
-// Updated User login
 app.post('/login', (req, res) => {
   const { email, password } = req.body;
 
@@ -321,7 +436,6 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Enhanced mood creation route (now includes optional comment)
 app.post(
   '/mood',
   authenticateToken,
@@ -405,7 +519,6 @@ app.post(
   }
 );
 
-// Get all mood entries for the authenticated user
 app.get('/moods', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
@@ -422,16 +535,6 @@ app.get('/moods', authenticateToken, (req, res) => {
       res.json(moods);
     }
   );
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  logger.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
-
-app.listen(port, () => {
-  logger.info(`API listening at http://localhost:${port}`);
 });
 
 // New route for forgot password
@@ -514,9 +617,6 @@ app.post('/reset-password/:token', (req, res) => {
   );
 });
 
-// Serve static content from the /app folder
-app.use(express.static('app'));
-
 app.get('*', (req, res) => {
   const filePath = path.join(__dirname, 'app', req.path);
   if (fs.existsSync(filePath)) {
@@ -525,9 +625,6 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'app', 'index.html'));
   }
 });
-
-// Add this near the other middleware
-app.use(express.urlencoded({ extended: true }));
 
 // Contact form submission endpoint
 app.post(
@@ -573,3 +670,7 @@ app.post(
     );
   }
 );
+
+app.listen(port, () => {
+  logger.info(`API listening at http://localhost:${port}`);
+});

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Account Settings - MoodTracker</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .settings-container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #5a79bc;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">MoodTracker</div></a>
+      <nav>
+        <ul>
+          <li><a href="dashboard.html">Dashboard</a></li>
+          <li><a href="account-settings.html">Account Settings</a></li>
+          <li><a href="#" id="logoutBtn">Logout</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <h1>Account Settings</h1>
+      <p>Manage your account preferences and notifications.</p>
+    </section>
+
+    <section class="settings-container">
+      <form id="settingsForm">
+        <div class="form-group">
+          <label for="name">Name:</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="dailyNotifications" name="dailyNotifications">
+            Receive daily mood reminders
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="weeklySummary" name="weeklySummary">
+            Receive weekly mood summaries
+          </label>
+        </div>
+        <button type="submit">Save Changes</button>
+      </form>
+    </section>
+
+    <script>
+      // Check if user is logged in
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = 'login.html';
+      }
+
+      // Fetch user settings
+      async function fetchUserSettings() {
+        try {
+          const response = await fetch('/user/settings', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const settings = await response.json();
+            document.getElementById('name').value = settings.name;
+            document.getElementById('dailyNotifications').checked = settings.dailyNotifications;
+            document.getElementById('weeklySummary').checked = settings.weeklySummary;
+          } else {
+            throw new Error('Failed to fetch user settings');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to fetch user settings. Please try again.');
+        }
+      }
+
+      // Update user settings
+      async function updateUserSettings(event) {
+        event.preventDefault();
+        const name = document.getElementById('name').value;
+        const dailyNotifications = document.getElementById('dailyNotifications').checked;
+        const weeklySummary = document.getElementById('weeklySummary').checked;
+
+        try {
+          const response = await fetch('/user/settings', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              name,
+              dailyNotifications,
+              weeklySummary,
+            }),
+          });
+
+          if (response.ok) {
+            alert('Settings updated successfully!');
+          } else {
+            throw new Error('Failed to update user settings');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to update user settings. Please try again.');
+        }
+      }
+
+      // Logout functionality
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        window.location.href = 'index.html';
+      });
+
+      // Fetch user settings when the page loads
+      fetchUserSettings();
+
+      // Add event listener for form submission
+      document.getElementById('settingsForm').addEventListener('submit', updateUserSettings);
+    </script>
+  </body>
+</html>

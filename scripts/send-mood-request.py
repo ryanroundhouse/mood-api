@@ -20,10 +20,15 @@ BASE_URL = os.getenv("MOOD_SITE_URL", "http://localhost:3000")
 # Database configuration
 DB_PATH = "../database.sqlite"
 
-def get_users():
+def get_users_with_notifications():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email FROM users WHERE isVerified = 1")
+    cursor.execute("""
+        SELECT users.id, users.email 
+        FROM users 
+        JOIN notifications ON users.id = notifications.userId 
+        WHERE users.isVerified = 1 AND notifications.dailyNotifications = 1
+    """)
     users = cursor.fetchall()
     conn.close()
     return users
@@ -117,7 +122,7 @@ def send_email(to_email, auth_code):
         print(f"Failed to send email to {to_email}. Error: {str(e)}")
 
 def main():
-    users = get_users()
+    users = get_users_with_notifications()
     for user_id, email in users:
         auth_code = generate_auth_code(user_id)
         send_email(email, auth_code)

@@ -5,6 +5,8 @@ from email.mime.multipart import MIMEMultipart
 import os
 import time
 from dotenv import load_dotenv
+import uuid
+import random
 
 # Load environment variables
 load_dotenv()
@@ -37,7 +39,17 @@ def generate_auth_code(user_id):
     return auth_code
 
 def send_email(to_email, auth_code):
-    subject = "How was your day?"
+    subjects = [
+        "How did your day go?",
+        "Tell us about your day!",
+        "How was your day today?",
+        "Rate your day—how did it feel?",
+        "How would you sum up your day?",
+        "Reflect on your day—how was it?",
+        "How are you feeling about today?",
+        "Quick check-in: How was today?"
+    ]
+    subject = random.choice(subjects)
     
     html_content = """
     <html lang="en">
@@ -87,6 +99,7 @@ def send_email(to_email, auth_code):
     """
 
     try:
+        message_id = f"<{uuid.uuid4()}@{MAILGUN_DOMAIN}>"
         response = requests.post(
             f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
             auth=("api", MAILGUN_API_KEY),
@@ -94,7 +107,8 @@ def send_email(to_email, auth_code):
                 "from": f"MoodTracker <{SENDER_EMAIL}>",
                 "to": [to_email],
                 "subject": subject,
-                "html": html_content
+                "html": html_content,
+                "h:Message-ID": message_id,
             }
         )
         response.raise_for_status()

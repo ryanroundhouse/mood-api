@@ -38,7 +38,7 @@ def generate_auth_code(user_id):
     cursor = conn.cursor()
     auth_code = os.urandom(16).hex()
     cursor.execute("INSERT INTO mood_auth_codes (userId, authCode, expiresAt) VALUES (?, ?, ?)",
-                   (user_id, auth_code, time.time() * 1000 + 86400))
+                   (user_id, auth_code, int(time.time()  + 86400) * 1000))
     conn.commit()
     conn.close()
     return auth_code

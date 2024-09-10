@@ -275,11 +275,7 @@ app.post('/mood/:authCode', (req, res) => {
       if (Date.now() > row.expiresAt) {
         const now = Date.now();
         logger.warn(
-          `Expired auth code used: ${authCode}. Current time: ${new Date(
-            now
-          ).toLocaleString()}, Expiration time: ${new Date(
-            row.expiresAt
-          ).toLocaleString()}`
+          `Expired auth code used: ${authCode}. Current time: ${now}, Expiration time: ${row.expiresAt}`
         );
         return res.status(401).json({ error: 'Auth code has expired' });
       }

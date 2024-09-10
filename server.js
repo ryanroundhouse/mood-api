@@ -85,26 +85,29 @@ db.serialize(() => {
     if (err) {
       logger.error('Error checking users table schema:', err);
     } else if (rows && Array.isArray(rows)) {
-      const accountLevelExists = rows.some(row => row.name === 'accountLevel');
+      const accountLevelExists = rows.some(
+        (row) => row.name === 'accountLevel'
+      );
       if (!accountLevelExists) {
-        db.run(`
+        db.run(
+          `
           ALTER TABLE users
           ADD COLUMN accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise'))
-        `, (alterErr) => {
-          if (alterErr) {
-            logger.error('Error adding accountLevel column:', alterErr);
-          } else {
-            logger.info('accountLevel column added to users table');
+        `,
+          (alterErr) => {
+            if (alterErr) {
+              logger.error('Error adding accountLevel column:', alterErr);
+            } else {
+              logger.info('accountLevel column added to users table');
+            }
           }
-        });
+        );
       }
     } else {
       logger.error('Unexpected result from PRAGMA table_info(users)');
     }
   });
 });
-
-
 
 // Set the base URL from environment variable or default to localhost
 const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
@@ -173,7 +176,7 @@ app.get('/user/settings', authenticateToken, (req, res) => {
       const userSettings = {
         name: row.name,
         dailyNotifications: row.dailyNotifications === 1,
-        weeklySummary: row.weeklySummary === 1
+        weeklySummary: row.weeklySummary === 1,
       };
 
       logger.info(`User settings fetched for user: ${userId}`);
@@ -183,57 +186,70 @@ app.get('/user/settings', authenticateToken, (req, res) => {
 });
 
 // Endpoint to update user settings
-app.put('/user/settings', authenticateToken, [
-  body('name').optional().trim().isLength({ min: 1 }),
-  body('dailyNotifications').optional().isBoolean(),
-  body('weeklySummary').optional().isBoolean(),
-], (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+app.put(
+  '/user/settings',
+  authenticateToken,
+  [
+    body('name').optional().trim().isLength({ min: 1 }),
+    body('dailyNotifications').optional().isBoolean(),
+    body('weeklySummary').optional().isBoolean(),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.id;
+    const { name, dailyNotifications, weeklySummary } = req.body;
+
+    db.serialize(() => {
+      if (name !== undefined) {
+        db.run(
+          'UPDATE users SET name = ? WHERE id = ?',
+          [name, userId],
+          (err) => {
+            if (err) {
+              logger.error('Error updating user name:', err);
+              return res.status(500).json({ error: 'Internal server error' });
+            }
+          }
+        );
+      }
+
+      if (dailyNotifications !== undefined || weeklySummary !== undefined) {
+        const updates = [];
+        const values = [];
+
+        if (dailyNotifications !== undefined) {
+          updates.push('dailyNotifications = ?');
+          values.push(dailyNotifications ? 1 : 0);
+        }
+
+        if (weeklySummary !== undefined) {
+          updates.push('weeklySummary = ?');
+          values.push(weeklySummary ? 1 : 0);
+        }
+
+        values.push(userId);
+
+        db.run(
+          `UPDATE notifications SET ${updates.join(', ')} WHERE userId = ?`,
+          values,
+          (err) => {
+            if (err) {
+              logger.error('Error updating notification settings:', err);
+              return res.status(500).json({ error: 'Internal server error' });
+            }
+          }
+        );
+      }
+
+      logger.info(`User settings updated for user: ${userId}`);
+      res.json({ message: 'Settings updated successfully' });
+    });
   }
-
-  const userId = req.user.id;
-  const { name, dailyNotifications, weeklySummary } = req.body;
-
-  db.serialize(() => {
-    if (name !== undefined) {
-      db.run('UPDATE users SET name = ? WHERE id = ?', [name, userId], (err) => {
-        if (err) {
-          logger.error('Error updating user name:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-      });
-    }
-
-    if (dailyNotifications !== undefined || weeklySummary !== undefined) {
-      const updates = [];
-      const values = [];
-
-      if (dailyNotifications !== undefined) {
-        updates.push('dailyNotifications = ?');
-        values.push(dailyNotifications ? 1 : 0);
-      }
-
-      if (weeklySummary !== undefined) {
-        updates.push('weeklySummary = ?');
-        values.push(weeklySummary ? 1 : 0);
-      }
-
-      values.push(userId);
-
-      db.run(`UPDATE notifications SET ${updates.join(', ')} WHERE userId = ?`, values, (err) => {
-        if (err) {
-          logger.error('Error updating notification settings:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-      });
-    }
-
-    logger.info(`User settings updated for user: ${userId}`);
-    res.json({ message: 'Settings updated successfully' });
-  });
-});
+);
 
 // mood by auth code
 app.post('/mood/:authCode', (req, res) => {
@@ -259,7 +275,11 @@ app.post('/mood/:authCode', (req, res) => {
       if (Date.now() > row.expiresAt) {
         const now = Date.now();
         logger.warn(
-          `Expired auth code used: ${authCode}. Current time: ${now}, Expiration time: ${row.expiresAt}`
+          `Expired auth code used: ${authCode}. Current time: ${new Date(
+            now
+          ).toLocaleString()}, Expiration time: ${new Date(
+            row.expiresAt
+          ).toLocaleString()}`
         );
         return res.status(401).json({ error: 'Auth code has expired' });
       }
@@ -370,7 +390,10 @@ app.post(
             [this.lastID],
             (notificationErr) => {
               if (notificationErr) {
-                logger.error('Error inserting default notification settings:', notificationErr);
+                logger.error(
+                  'Error inserting default notification settings:',
+                  notificationErr
+                );
               }
             }
           );
@@ -458,7 +481,11 @@ app.post('/login', (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
-    const token = jwt.sign({ id: user.id, accountLevel: user.accountLevel }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(
+      { id: user.id, accountLevel: user.accountLevel },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
     logger.info(`User logged in successfully: ${email}`);
     res.json({ token });
   });

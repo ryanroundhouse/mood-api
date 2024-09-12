@@ -270,17 +270,45 @@
       let currentDate = new Date();
       const maxPastMonths = 11;
 
-      // Fetch mood entries
-      async function fetchMoodEntries() {
+      // Add this function to fetch custom activities
+      async function fetchCustomActivities() {
         try {
-          const response = await fetch('/moods', {
+          const response = await fetch('/user/activities', {
             headers: {
               Authorization: `Bearer ${token}`,
             },
           });
 
           if (response.ok) {
-            const moods = await response.json();
+            const data = await response.json();
+            return data.activities;
+          } else if (response.status === 403) {
+            // User doesn't have pro or enterprise account
+            return null;
+          } else {
+            throw new Error('Failed to fetch custom activities');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          return null;
+        }
+      }
+
+      // Modify the fetchMoodEntries function
+      async function fetchMoodEntries() {
+        try {
+          const [moodResponse, activitiesResponse] = await Promise.all([
+            fetch('/moods', {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }),
+            fetchCustomActivities(),
+          ]);
+
+          if (moodResponse.ok) {
+            const moods = await moodResponse.json();
+            updateActivitiesCombobox(activitiesResponse);
             preSelectTodayMood(moods);
             displayCalendar(moods);
           } else {
@@ -290,6 +318,32 @@
           console.error('Error:', error);
           alert('Failed to fetch mood entries. Please try again.');
         }
+      }
+
+      // Add this function to update the activities combobox
+      function updateActivitiesCombobox(customActivities) {
+        const checkboxesContainer = document.getElementById('checkboxes');
+        checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
+
+        const activities = customActivities || [
+          'Good Sleep',
+          'Worked Out',
+          'Sports',
+          'Social',
+          'Rested',
+        ];
+
+        activities.forEach((activity) => {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.id = activity.toLowerCase().replace(/\s+/g, '-');
+          input.value = activity.toLowerCase();
+
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(activity));
+          checkboxesContainer.appendChild(label);
+        });
       }
 
       function displayCalendar(moods) {
@@ -345,9 +399,12 @@
 
           if (mood) {
             dayDiv.classList.add('has-mood', `mood-${mood.rating}`);
+            const activities = mood.activities
+              ? JSON.parse(mood.activities)
+              : [];
             dayDiv.title = `Mood: ${mood.rating}, Comment: ${
               mood.comment || 'No comment'
-            }`;
+            }, Activities: ${activities.join(', ') || 'None'}`;
           }
 
           calendarDiv.appendChild(dayDiv);
@@ -386,6 +443,7 @@
         fetchMoodEntries();
       });
 
+      // Modify the preSelectTodayMood function
       function preSelectTodayMood(moods) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -412,7 +470,7 @@
               if (Array.isArray(activitiesArray)) {
                 activitiesArray.forEach((activity) => {
                   const checkbox = document.querySelector(
-                    `input[value="${activity}"]`
+                    `input[value="${activity.toLowerCase()}"]`
                   );
                   if (checkbox) {
                     checkbox.checked = true;

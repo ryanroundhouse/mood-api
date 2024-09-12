@@ -140,6 +140,55 @@
       const rating = urlParams.get('rating');
       const authCode = urlParams.get('auth_code');
 
+      // Update this function to fetch custom activities using the auth code
+      async function fetchCustomActivities() {
+        try {
+          const response = await fetch(`/user/activities/${authCode}`);
+
+          if (response.ok) {
+            const data = await response.json();
+            return data.activities;
+          } else if (response.status === 403) {
+            // User doesn't have pro or enterprise account
+            return null;
+          } else {
+            throw new Error('Failed to fetch custom activities');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          return null;
+        }
+      }
+
+      // Add this function to update the activities combobox
+      function updateActivitiesCombobox(customActivities) {
+        const checkboxesContainer = document.getElementById('checkboxes');
+        checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
+
+        const activities = customActivities || [
+          'Good Sleep',
+          'Worked Out',
+          'Sports',
+          'Social',
+          'Rested',
+        ];
+
+        activities.forEach((activity) => {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.id = activity.toLowerCase().replace(/\s+/g, '-');
+          input.value = activity.toLowerCase();
+
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(activity));
+          checkboxesContainer.appendChild(label);
+        });
+      }
+
+      // Fetch custom activities and update the combobox
+      fetchCustomActivities().then(updateActivitiesCombobox);
+
       // Pre-select the mood option from the email
       if (rating !== null) {
         document

@@ -6,6 +6,7 @@ import os
 import calendar
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import json
 
 # Load environment variables
 load_dotenv()
@@ -39,12 +40,12 @@ def get_user_moods(user_id, year, month):
     end_date = end_date.replace(day=1)
     
     cursor.execute("""
-        SELECT strftime('%d', datetime) as day, rating, comment
+        SELECT strftime('%d', datetime) as day, rating, comment, activities
         FROM moods
         WHERE userId = ? AND datetime >= ? AND datetime < ?
     """, (user_id, start_date.isoformat(), end_date.isoformat()))
     
-    moods = {row[0]: {'rating': row[1], 'comment': row[2]} for row in cursor.fetchall()}
+    moods = {row[0]: {'rating': row[1], 'comment': row[2], 'activities': json.loads(row[3]) if row[3] else []} for row in cursor.fetchall()}
     conn.close()
     return moods
 
@@ -77,7 +78,8 @@ def generate_calendar_html(year, month, moods):
                 mood = moods.get(f"{day:02d}")
                 if mood:
                     bg_color = mood_colors[mood['rating']]
-                    title = f"Mood: {mood['rating']}, Comment: {mood['comment'] or 'No comment'}"
+                    activities = ", ".join(mood['activities']) if mood['activities'] else 'No activities'
+                    title = f"Mood: {mood['rating']}, Comment: {mood['comment'] or 'No comment'}, Activities: {activities}"
                 else:
                     bg_color = 'white'
                     title = ''

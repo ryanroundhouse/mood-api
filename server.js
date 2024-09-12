@@ -122,6 +122,15 @@ db.serialize(() => {
       }
     }
   );
+
+  // Create custom_activities table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS custom_activities (
+      userId INTEGER PRIMARY KEY,
+      activities TEXT,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    )
+  `);
 });
 
 // Set the base URL from environment variable or default to localhost
@@ -166,6 +175,20 @@ const authenticateToken = (req, res, next) => {
     req.user = { id: user.id, accountLevel: user.accountLevel };
     next();
   });
+};
+
+// Middleware to check if user has pro or enterprise account
+const checkProOrEnterprise = (req, res, next) => {
+  if (
+    req.user.accountLevel === 'pro' ||
+    req.user.accountLevel === 'enterprise'
+  ) {
+    next();
+  } else {
+    res
+      .status(403)
+      .json({ error: 'Access denied. Pro or Enterprise account required.' });
+  }
 };
 
 // Endpoint to get user settings
@@ -709,6 +732,135 @@ app.post('/reset-password/:token', (req, res) => {
 
           logger.info(`Password reset successfully for user: ${user.email}`);
           res.json({ message: 'Password reset successful' });
+        }
+      );
+    }
+  );
+});
+
+// GET endpoint for user activities
+app.get(
+  '/user/activities',
+  authenticateToken,
+  checkProOrEnterprise,
+  (req, res) => {
+    const userId = req.user.id;
+
+    db.get(
+      'SELECT activities FROM custom_activities WHERE userId = ?',
+      [userId],
+      (err, row) => {
+        if (err) {
+          logger.error('Error fetching user activities:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        const activities = row ? JSON.parse(row.activities) : [];
+        res.json({ activities });
+      }
+    );
+  }
+);
+
+// POST endpoint for user activities
+app.post(
+  '/user/activities',
+  authenticateToken,
+  checkProOrEnterprise,
+  [
+    body('activities').isArray(),
+    body('activities.*').isString().trim().isLength({ min: 1, max: 100 }),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.id;
+    const { activities } = req.body;
+    const activitiesJson = JSON.stringify(activities);
+
+    db.run(
+      'INSERT OR REPLACE INTO custom_activities (userId, activities) VALUES (?, ?)',
+      [userId, activitiesJson],
+      (err) => {
+        if (err) {
+          logger.error('Error updating user activities:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        logger.info(`User activities updated for user: ${userId}`);
+        res.json({ message: 'Activities updated successfully', activities });
+      }
+    );
+  }
+);
+
+// GET endpoint for user activities using auth code
+app.get('/user/activities/:authCode', (req, res) => {
+  const { authCode } = req.params;
+
+  db.get(
+    `SELECT userId, expiresAt FROM mood_auth_codes WHERE authCode = ?`,
+    [authCode],
+    (err, row) => {
+      if (err) {
+        logger.error('Error verifying mood auth code:', err);
+        return res.status(500).json({ error: 'Error verifying auth code' });
+      }
+
+      if (!row) {
+        logger.warn(`Invalid auth code used: ${authCode}`);
+        return res.status(401).json({ error: 'Invalid auth code' });
+      }
+
+      if (Date.now() > row.expiresAt) {
+        logger.warn(`Expired auth code used: ${authCode}`);
+        return res.status(401).json({ error: 'Auth code has expired' });
+      }
+
+      const userId = row.userId;
+
+      // Check if the user has a pro or enterprise account
+      db.get(
+        'SELECT accountLevel FROM users WHERE id = ?',
+        [userId],
+        (err, userRow) => {
+          if (err) {
+            logger.error('Error fetching user account level:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          if (
+            !userRow ||
+            (userRow.accountLevel !== 'pro' &&
+              userRow.accountLevel !== 'enterprise')
+          ) {
+            return res
+              .status(403)
+              .json({
+                error: 'Access denied. Pro or Enterprise account required.',
+              });
+          }
+
+          // Fetch custom activities
+          db.get(
+            'SELECT activities FROM custom_activities WHERE userId = ?',
+            [userId],
+            (err, activitiesRow) => {
+              if (err) {
+                logger.error('Error fetching user activities:', err);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+
+              const activities = activitiesRow
+                ? JSON.parse(activitiesRow.activities)
+                : [];
+              logger.info(`Custom activities fetched for user: ${userId}`);
+              res.json({ activities });
+            }
+          );
         }
       );
     }

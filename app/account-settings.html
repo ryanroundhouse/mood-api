@@ -18,7 +18,7 @@
         display: block;
         margin-bottom: 5px;
       }
-      input[type="text"] {
+      input[type='text'] {
         width: 100%;
         padding: 8px;
         border: 1px solid #ccc;
@@ -34,6 +34,29 @@
       }
       button:hover {
         background-color: #5a79bc;
+      }
+      #activitiesList {
+        list-style-type: none;
+        padding: 0;
+      }
+      #activitiesList li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px; /* Reduced from 10px to 5px */
+        padding: 2.5px 0; /* Reduced from 5px to 2.5px */
+      }
+      #activitiesList button {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-left: 5px; /* Reduced from 10px to 5px */
+      }
+      #activitiesList button:hover {
+        background-color: #c82333;
       }
     </style>
   </head>
@@ -58,24 +81,39 @@
       <form id="settingsForm">
         <div class="form-group">
           <label for="name">Name:</label>
-          <input type="text" id="name" name="name" required>
+          <input type="text" id="name" name="name" required />
         </div>
         <div class="form-group">
           <label>
-            <input type="checkbox" id="dailyNotifications" name="dailyNotifications">
+            <input
+              type="checkbox"
+              id="dailyNotifications"
+              name="dailyNotifications"
+            />
             Receive daily mood reminders
           </label>
         </div>
         <div class="form-group">
           <label>
-            <input type="checkbox" id="weeklySummary" name="weeklySummary">
+            <input type="checkbox" id="weeklySummary" name="weeklySummary" />
             Receive weekly mood summaries
           </label>
         </div>
         <button type="submit">Save Changes</button>
       </form>
-      <div id="exportContainer" style="display: none; margin-top: 20px;">
+      <div id="exportContainer" style="display: none; margin-top: 20px">
         <button id="exportMoodData">Export Mood Data</button>
+      </div>
+
+      <!-- New section for custom activities -->
+      <div
+        id="customActivitiesContainer"
+        style="display: none; margin-top: 20px"
+      >
+        <h2>Custom Activities</h2>
+        <ul id="activitiesList"></ul>
+        <input type="text" id="newActivity" placeholder="New activity" />
+        <button id="addActivity">Add Activity</button>
       </div>
     </section>
 
@@ -98,17 +136,30 @@
           if (response.ok) {
             const settings = await response.json();
             document.getElementById('name').value = settings.name;
-            document.getElementById('dailyNotifications').checked = settings.dailyNotifications;
-            document.getElementById('weeklySummary').checked = settings.weeklySummary;
+            document.getElementById('dailyNotifications').checked =
+              settings.dailyNotifications;
+            document.getElementById('weeklySummary').checked =
+              settings.weeklySummary;
 
             // Check user's account level and show export button if applicable
-            const accountLevel = JSON.parse(atob(token.split('.')[1])).accountLevel;
+            const accountLevel = JSON.parse(
+              atob(token.split('.')[1])
+            ).accountLevel;
             console.log(`User account level: ${accountLevel}`);
             if (accountLevel === 'pro' || accountLevel === 'enterprise') {
-              document.getElementById('exportContainer').style.display = 'block';
-              console.log('Export button displayed for pro/enterprise user');
+              document.getElementById('exportContainer').style.display =
+                'block';
+              document.getElementById(
+                'customActivitiesContainer'
+              ).style.display = 'block';
+              fetchCustomActivities();
+              console.log(
+                'Export button and custom activities displayed for pro/enterprise user'
+              );
             } else {
-              console.log('Export button not displayed for basic user');
+              console.log(
+                'Export button and custom activities not displayed for basic user'
+              );
             }
           } else {
             throw new Error('Failed to fetch user settings');
@@ -123,7 +174,8 @@
       async function updateUserSettings(event) {
         event.preventDefault();
         const name = document.getElementById('name').value;
-        const dailyNotifications = document.getElementById('dailyNotifications').checked;
+        const dailyNotifications =
+          document.getElementById('dailyNotifications').checked;
         const weeklySummary = document.getElementById('weeklySummary').checked;
 
         try {
@@ -165,11 +217,15 @@
             console.log('Mood data:', moodData);
 
             // Remove userId from each mood entry
-            const sanitizedMoodData = moodData.map(({ userId, ...rest }) => rest);
+            const sanitizedMoodData = moodData.map(
+              ({ userId, ...rest }) => rest
+            );
 
             const dataStr = JSON.stringify(sanitizedMoodData, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-            
+            const dataUri =
+              'data:application/json;charset=utf-8,' +
+              encodeURIComponent(dataStr);
+
             const exportFileDefaultName = 'mood_data.json';
             const linkElement = document.createElement('a');
             linkElement.setAttribute('href', dataUri);
@@ -194,10 +250,132 @@
       fetchUserSettings();
 
       // Add event listener for form submission
-      document.getElementById('settingsForm').addEventListener('submit', updateUserSettings);
+      document
+        .getElementById('settingsForm')
+        .addEventListener('submit', updateUserSettings);
 
       // Add event listener for mood data export
-      document.getElementById('exportMoodData').addEventListener('click', exportMoodData);
+      document
+        .getElementById('exportMoodData')
+        .addEventListener('click', exportMoodData);
+
+      // Fetch custom activities
+      async function fetchCustomActivities() {
+        try {
+          const response = await fetch('/user/activities', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            let activities = data.activities;
+
+            if (activities.length === 0) {
+              activities = [
+                'good sleep',
+                'worked out',
+                'sports',
+                'social',
+                'rested',
+              ];
+            }
+
+            updateActivitiesList(activities);
+          } else {
+            throw new Error('Failed to fetch custom activities');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to fetch custom activities. Please try again.');
+        }
+      }
+
+      // Update activities list in the DOM
+      function updateActivitiesList(activities) {
+        const list = document.getElementById('activitiesList');
+        list.innerHTML = '';
+        activities.forEach((activity, index) => {
+          const li = document.createElement('li');
+          const activitySpan = document.createElement('span');
+          activitySpan.textContent = activity;
+          li.appendChild(activitySpan);
+          const deleteBtn = document.createElement('button');
+          deleteBtn.textContent = 'Delete';
+          deleteBtn.onclick = () => deleteActivity(index);
+          li.appendChild(deleteBtn);
+          list.appendChild(li);
+        });
+      }
+
+      // Add new activity
+      async function addActivity() {
+        const newActivity = document.getElementById('newActivity').value.trim();
+        if (newActivity) {
+          try {
+            const response = await fetch('/user/activities', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                activities: [...getCurrentActivities(), newActivity],
+              }),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              updateActivitiesList(data.activities);
+              document.getElementById('newActivity').value = '';
+            } else {
+              throw new Error('Failed to add activity');
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to add activity. Please try again.');
+          }
+        }
+      }
+
+      // Delete activity
+      async function deleteActivity(index) {
+        const activities = getCurrentActivities();
+        activities.splice(index, 1);
+        try {
+          const response = await fetch('/user/activities', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ activities }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            updateActivitiesList(data.activities);
+          } else {
+            throw new Error('Failed to delete activity');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to delete activity. Please try again.');
+        }
+      }
+
+      // Get current activities from the DOM
+      function getCurrentActivities() {
+        return Array.from(
+          document.getElementById('activitiesList').children
+        ).map((li) => li.textContent.replace('Delete', '').trim());
+      }
+
+      // Add event listener for adding new activity
+      document
+        .getElementById('addActivity')
+        .addEventListener('click', addActivity);
     </script>
   </body>
 </html>

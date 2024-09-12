@@ -50,6 +50,34 @@
           margin: 0 auto;
         }
       }
+      .multiselect {
+        width: 200px;
+        margin: 20px auto;
+      }
+      .selectBox {
+        position: relative;
+      }
+      .selectBox select {
+        width: 100%;
+        font-weight: bold;
+      }
+      .overSelect {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
+      }
+      #checkboxes {
+        display: none;
+        border: 1px #dadada solid;
+      }
+      #checkboxes label {
+        display: block;
+      }
+      #checkboxes label:hover {
+        background-color: #1e90ff;
+      }
     </style>
   </head>
   <body>
@@ -69,6 +97,34 @@
         <span class="mood-option" data-rating="2">😐</span>
         <span class="mood-option" data-rating="3">🙂</span>
         <span class="mood-option" data-rating="4">😄</span>
+      </div>
+      <!-- Add the multi-select combobox here -->
+      <div class="multiselect">
+        <div class="selectBox" onclick="showCheckboxes()">
+          <select>
+            <option>Select activities</option>
+          </select>
+          <div class="overSelect"></div>
+        </div>
+        <div id="checkboxes">
+          <label for="goodSleep">
+            <input type="checkbox" id="goodSleep" value="good sleep" />Good
+            Sleep</label
+          >
+          <label for="workedOut">
+            <input type="checkbox" id="workedOut" value="worked out" />Worked
+            Out</label
+          >
+          <label for="sports">
+            <input type="checkbox" id="sports" value="sports" />Sports</label
+          >
+          <label for="social">
+            <input type="checkbox" id="social" value="social" />Social</label
+          >
+          <label for="rested">
+            <input type="checkbox" id="rested" value="rested" />Rested</label
+          >
+        </div>
       </div>
       <textarea
         id="commentBox"
@@ -101,7 +157,7 @@
         });
       });
 
-      // Submit mood
+      // Modify the mood submission functionality
       document
         .getElementById('submitMood')
         .addEventListener('click', async () => {
@@ -114,6 +170,11 @@
           const rating = selectedMood.getAttribute('data-rating');
           const comment = document.getElementById('commentBox').value;
 
+          // Get selected activities
+          const selectedActivities = Array.from(
+            document.querySelectorAll('#checkboxes input:checked')
+          ).map((checkbox) => checkbox.value);
+
           try {
             const response = await fetch(`/mood/${authCode}`, {
               method: 'POST',
@@ -123,6 +184,7 @@
               body: JSON.stringify({
                 rating: parseInt(rating),
                 comment: comment,
+                activities: selectedActivities,
               }),
             });
 
@@ -137,6 +199,19 @@
             alert('Failed to submit mood. Please try again.');
           }
         });
+
+      let expanded = false;
+
+      function showCheckboxes() {
+        var checkboxes = document.getElementById('checkboxes');
+        if (!expanded) {
+          checkboxes.style.display = 'block';
+          expanded = true;
+        } else {
+          checkboxes.style.display = 'none';
+          expanded = false;
+        }
+      }
     </script>
   </body>
 </html>

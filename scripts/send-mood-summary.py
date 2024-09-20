@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 import json
 from collections import defaultdict, Counter
 import re
+import random
+import nltk
+nltk.download('opinion_lexicon')
+nltk.download('wordnet')
+from nltk.corpus import opinion_lexicon
+from nltk.corpus import wordnet
 
 # Load environment variables
 load_dotenv()
@@ -40,7 +46,7 @@ def get_user_moods(user_id, year, month):
     start_date = datetime(year, month, 1)
     end_date = start_date + timedelta(days=32)
     end_date = end_date.replace(day=1)
-    
+
     cursor.execute("""
         SELECT strftime('%d', datetime) as day, rating, comment, activities
         FROM moods
@@ -146,6 +152,16 @@ def send_email(to_email, calendar_html, basic_stats):
     except requests.exceptions.RequestException as e:
         print(f"Failed to send email to {to_email}. Error: {str(e)}")
 
+def get_positive_words():
+    return set(opinion_lexicon.positive())
+
+def get_stress_words():
+    stress_synsets = wordnet.synsets('stress') + wordnet.synsets('anxiety') + wordnet.synsets('fatigue')
+    stress_words = set()
+    for synset in stress_synsets:
+        stress_words.update(lemma.name() for lemma in synset.lemmas())
+    return stress_words
+
 def generate_mood_summary(user_id, start_date, end_date):
     # Database configuration
     DB_PATH = "../database.sqlite"
@@ -189,10 +205,17 @@ def generate_mood_summary(user_id, start_date, end_date):
     highest_mood_rating = highest_mood_entry['rating']
     highest_mood_comment = highest_mood_entry['comment']
 
-    # 3. Mood Improvement (compared to previous week)
-    # Since we have only one week of data, we'll assume a previous week's average mood for demonstration
-    previous_week_avg_mood = 2.5  # Placeholder value
-    mood_improvement = ((average_mood - previous_week_avg_mood) / previous_week_avg_mood) * 100
+    # 3. Mood Change (compared to previous week)
+    today = end_date.date()
+    last_week = [entry for entry in data if (today - entry['datetime'].date()).days <= 7]
+    previous_week = [entry for entry in data if 7 < (today - entry['datetime'].date()).days <= 14]
+
+    if last_week and previous_week:
+        last_week_avg = sum(entry['rating'] for entry in last_week) / len(last_week)
+        previous_week_avg = sum(entry['rating'] for entry in previous_week) / len(previous_week)
+        mood_improvement = ((last_week_avg - previous_week_avg) / previous_week_avg) * 100
+    else:
+        mood_improvement = None
 
     # 4. Most Enjoyed Activity
     activity_counts = Counter()
@@ -219,12 +242,12 @@ def generate_mood_summary(user_id, start_date, end_date):
     boosting_activities = [activity for activity, avg_rating in activity_avg_mood.items() if avg_rating >= average_mood]
 
     # 6. Positive Words Count
-    positive_words = ['good', 'great', 'fun', 'enjoy', 'happy', 'love', 'well', 'awesome', 'excellent', 'positive', 'focus', 'progress', 'listened']
+    positive_words = get_positive_words()
     positive_word_count = 0
     for entry in data:
         comment = entry['comment'].lower()
-        words = re.findall(r'\b\w+\b', comment)
-        positive_word_count += sum(1 for word in words if word in positive_words)
+        words = set(re.findall(r'\b\w+\b', comment))
+        positive_word_count += len(words.intersection(positive_words))
 
     # 7. Sleep and Mood Correlation
     sleep_related_entries = [entry for entry in data if 'good sleep' in entry['activities']]
@@ -234,17 +257,8 @@ def generate_mood_summary(user_id, start_date, end_date):
     else:
         avg_sleep_mood = None
 
-    # 8. Social Interaction Effect
-    social_keywords = ['family', 'friends', 'kt', 'katie', 'people', 'developer', 'paired', 'listened']
-    social_entries = [entry for entry in data if any(word in entry['comment'].lower() for word in social_keywords)]
-    if social_entries:
-        social_ratings = [entry['rating'] for entry in social_entries]
-        avg_social_mood = sum(social_ratings) / len(social_ratings)
-    else:
-        avg_social_mood = None
-
     # 9. Physical Activity Benefits
-    physical_activities = ['sports', 'hockey']
+    physical_activities = ['sports', 'hockey', 'baseball', 'mma', 'basketball', 'soccer', 'football', 'tennis', 'golf', 'swimming', 'running', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym']
     physical_entries = [entry for entry in data if any(activity in entry['activities'] for activity in physical_activities)]
     if physical_entries:
         physical_ratings = [entry['rating'] for entry in physical_entries]
@@ -253,9 +267,9 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_physical_mood = None
 
     # 10. Consistency in Tracking
-    total_days = (data[-1]['datetime'] - data[0]['datetime']).days + 1
+    total_days = (end_date - start_date).days + 1
     days_logged = len(set(entry['datetime'].date() for entry in data))
-    consistency_percentage = (days_logged / total_days) * 100
+    consistency_percentage = (days_logged / total_days) * 100 if total_days > 0 else None
 
     # 11. New Experiences
     # Not enough data to determine new experiences
@@ -291,7 +305,7 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_work_mood = None
 
     # 15. Family Time Impact
-    family_related_entries = [entry for entry in data if any(word in entry['comment'].lower() for word in ['family', 'odin', 'kt', 'katie', 'cyrus'])]
+    family_related_entries = [entry for entry in data if any(word in entry['comment'].lower() for word in ['family', 'kid', 'son', 'daughter', 'mom', 'dad', 'father', 'mother'])]
     if family_related_entries:
         family_ratings = [entry['rating'] for entry in family_related_entries]
         avg_family_mood = sum(family_ratings) / len(family_ratings)
@@ -313,12 +327,12 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_progress_mood = None
 
     # 17. Stress Reduction Indicators
-    stress_keywords = ['stress', 'trouble', 'tired', 'exhausted', 'sad', 'sleep', 'nosebleed']
+    stress_words = get_stress_words()
     stress_word_count = 0
     for entry in data:
         comment = entry['comment'].lower()
-        words = re.findall(r'\b\w+\b', comment)
-        stress_word_count += sum(1 for word in words if word in stress_keywords)
+        words = set(re.findall(r'\b\w+\b', comment))
+        stress_word_count += len(words.intersection(stress_words))
 
     # 18. Positive Outlook Percentage
     positive_days = [entry for entry in data if entry['rating'] >= 3]
@@ -327,54 +341,45 @@ def generate_mood_summary(user_id, start_date, end_date):
     # 19. Most Detailed Journal Entry
     most_detailed_entry = max(data, key=lambda x: len(x['comment']))
     most_detailed_day = most_detailed_entry['datetime'].strftime('%A, %B %d, %Y')
-    most_detailed_comment_length = len(most_detailed_entry['comment'])
     most_detailed_comment = most_detailed_entry['comment']
 
-    # 20. Weekly Mood Trend
-    mood_trend = [(entry['datetime'].strftime('%Y-%m-%d'), entry['rating']) for entry in data]
-
-    # Now, select the 4 most interesting statistics
-    # For simplicity, we'll choose the ones with the highest positive impact
-
+    # Now, select 4 random statistics
     statistics = []
 
-    def add_statistic(name, description, score):
-        statistics.append({'name': name, 'description': description, 'score': score})
+    def add_statistic(name, description):
+        statistics.append({'name': name, 'description': description})
 
-    # Adding statistics with their scores
-    add_statistic('Average Mood Rating', f'Your average mood rating this week was {average_mood:.2f}.', average_mood)
-    add_statistic('Highest Mood Day', f'On {highest_mood_day}, you had your highest mood rating of {highest_mood_rating}. You mentioned: "{highest_mood_comment}"', highest_mood_rating)
-    add_statistic('Mood Improvement', f'Your mood improved by {mood_improvement:.1f}% compared to the previous week.', mood_improvement)
+    # Adding statistics
+    add_statistic('Average Mood Rating', f'Your average mood rating this week was {average_mood:.2f}.')
+    add_statistic('Highest Mood Day', f'On {highest_mood_day}, you had your highest mood rating of {highest_mood_rating}. You mentioned: "{highest_mood_comment}"')
+    if mood_improvement is not None:
+        add_statistic('Mood Improvement', f'Your mood changed by {mood_improvement:.1f}% compared to the previous week.')
     if most_enjoyed_activity:
-        add_statistic('Most Enjoyed Activity', f'You most frequently engaged in "{most_enjoyed_activity}" this week.', activity_counts[most_enjoyed_activity])
+        add_statistic('Most Enjoyed Activity', f'You most frequently engaged in "{most_enjoyed_activity}" this week.')
     if boosting_activities:
-        add_statistic('Activities Boosting Mood', f'Activities like {", ".join(boosting_activities)} are associated with higher mood ratings.', len(boosting_activities))
-    add_statistic('Positive Words Count', f'You used {positive_word_count} positive words in your journal entries this week.', positive_word_count)
+        add_statistic('Activities Boosting Mood', f'Activities like {", ".join(boosting_activities)} are associated with higher mood ratings.')
+    add_statistic('Positive Words Count', f'You used {positive_word_count} positive words in your journal entries this week.')
     if avg_sleep_mood is not None:
-        add_statistic('Sleep and Mood Correlation', f'When you had good sleep, your average mood was {avg_sleep_mood:.2f}.', avg_sleep_mood)
-    if avg_social_mood is not None:
-        add_statistic('Social Interaction Effect', f'Social interactions boosted your mood to an average of {avg_social_mood:.2f}.', avg_social_mood)
+        add_statistic('Sleep and Mood Correlation', f'When you had good sleep, your average mood was {avg_sleep_mood:.2f}.')
     if avg_physical_mood is not None:
-        add_statistic('Physical Activity Benefits', f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.', avg_physical_mood)
-    add_statistic('Consistency in Tracking', f'You logged your mood on {days_logged} out of {total_days} days ({consistency_percentage:.1f}% consistency).', consistency_percentage)
+        add_statistic('Physical Activity Benefits', f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.')
+    if consistency_percentage is not None:
+        add_statistic('Consistency in Tracking', f'You logged your mood on {days_logged} out of {total_days} days ({consistency_percentage:.1f}% consistency).')
     if avg_weekday_mood is not None and avg_weekend_mood is not None:
-        add_statistic('Weekend vs. Weekday Mood', f'Your average weekend mood was {avg_weekend_mood:.2f} compared to {avg_weekday_mood:.2f} on weekdays.', abs(avg_weekend_mood - avg_weekday_mood))
+        add_statistic('Weekend vs. Weekday Mood', f'Your average weekend mood was {avg_weekend_mood:.2f} compared to {avg_weekday_mood:.2f} on weekdays.')
     if avg_early_riser_mood is not None:
-        add_statistic('Early Riser Effect', f'On days you woke up early, your average mood was {avg_early_riser_mood:.2f}.', avg_early_riser_mood)
+        add_statistic('Early Riser Effect', f'On days you woke up early, your average mood was {avg_early_riser_mood:.2f}.')
     if avg_work_mood is not None:
-        add_statistic('Work Satisfaction Influence', f'Work-related activities correlated with an average mood of {avg_work_mood:.2f}.', avg_work_mood)
+        add_statistic('Work Satisfaction Influence', f'Work-related activities correlated with an average mood of {avg_work_mood:.2f}.')
     if avg_family_mood is not None:
-        add_statistic('Family Time Impact', f'Spending time with family increased your mood to an average of {avg_family_mood:.2f}.', avg_family_mood)
+        add_statistic('Family Time Impact', f'Spending time with family increased your mood to an average of {avg_family_mood:.2f}.')
     if avg_progress_mood is not None:
-        add_statistic('Progress Towards Goals', f'Making progress on your goals raised your mood to an average of {avg_progress_mood:.2f}.', avg_progress_mood)
-    add_statistic('Positive Outlook Percentage', f'{positive_percentage:.1f}% of your days had a mood rating of 3 or higher.', positive_percentage)
-    add_statistic('Most Detailed Journal Entry', f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"', most_detailed_comment_length)
+        add_statistic('Progress Towards Goals', f'Making progress on your goals raised your mood to an average of {avg_progress_mood:.2f}.')
+    add_statistic('Positive Outlook Percentage', f'{positive_percentage:.1f}% of your days had a mood rating of 3 or higher.')
+    add_statistic('Most Detailed Journal Entry', f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"')
 
-    # Sort statistics by score
-    statistics.sort(key=lambda x: x['score'], reverse=True)
-
-    # Select the top 4 statistics
-    top_statistics = statistics[:4]
+    # Select 4 random statistics
+    random_statistics = random.sample(statistics, min(4, len(statistics)))
 
     # Generate the email body
     email_body = """
@@ -382,11 +387,10 @@ def generate_mood_summary(user_id, start_date, end_date):
 
     """.format(start=start_date.strftime('%B %d, %Y'), end=end_date.strftime('%B %d, %Y'))
 
-    for i, stat in enumerate(top_statistics, start=1):
+    for i, stat in enumerate(random_statistics, start=1):
         email_body += f"<p>{i}. **{stat['name']}**: {stat['description']}\n\n</p>"
 
     return email_body
-
 def main():
     users = get_users()
     current_date = datetime.now()

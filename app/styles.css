@@ -45,7 +45,7 @@ nav ul li a {
   background: linear-gradient(135deg, #ffd700, #ffa500, #ffd700);
   color: #000; /* Changed from #fff to #000 */
   text-align: center;
-  padding: 100px 20px;
+  padding: 60px 20px;
 }
 
 .hero h1 {
@@ -116,11 +116,6 @@ nav ul li a {
   .feature-card {
     margin-bottom: 20px;
   }
-}
-
-.dashboard-hero {
-  background: linear-gradient(135deg, #b8e994, #6a89cc);
-  padding: 60px 20px;
 }
 
 .dashboard-hero h1 {

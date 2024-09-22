@@ -61,7 +61,7 @@ def send_email(to_email, auth_code):
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Submit Mood - MoodTracker</title>
+        <title>Submit Mood - Moodful</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -109,7 +109,7 @@ def send_email(to_email, auth_code):
             f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
             auth=("api", MAILGUN_API_KEY),
             data={
-                "from": f"MoodTracker <{SENDER_EMAIL}>",
+                "from": f"Moodful <{SENDER_EMAIL}>",
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content,

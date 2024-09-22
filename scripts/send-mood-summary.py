@@ -121,7 +121,7 @@ def send_email(to_email, calendar_html, basic_stats):
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Monthly Mood Calendar - MoodTracker</title>
+        <title>Monthly Mood Calendar - Moodful</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #6a89cc;">Basic Analytics</h2>
@@ -131,7 +131,7 @@ def send_email(to_email, calendar_html, basic_stats):
         {calendar_html}
         <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work and have a wonderful week ahead!</p>
         <p>Best regards,
-        <br/>Your Mood Tracker</p>
+        <br/>Your Moodful</p>
     </body>
     </html>
     """
@@ -141,7 +141,7 @@ def send_email(to_email, calendar_html, basic_stats):
             f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
             auth=("api", MAILGUN_API_KEY),
             data={
-                "from": f"MoodTracker <{SENDER_EMAIL}>",
+                "from": f"Moodful <{SENDER_EMAIL}>",
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content

@@ -42,8 +42,8 @@ nav ul li a {
 }
 
 .hero {
-  background: linear-gradient(135deg, #6a89cc, #b8e994);
-  color: #fff;
+  background: linear-gradient(135deg, #ffd700, #ffa500, #ffd700);
+  color: #000; /* Changed from #fff to #000 */
   text-align: center;
   padding: 100px 20px;
 }

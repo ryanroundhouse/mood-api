@@ -1,4 +1,4 @@
-# Mood Tracker API
+# Moodful API
 
 A RESTful API for a mood tracking application built with Node.js, Express, and MongoDB.
 
@@ -108,6 +108,7 @@ Response:
 ```
 
 The returned JWT token contains the following payload:
+
 - `id`: The user's unique identifier
 - `accountLevel`: The user's account level (e.g., 'basic', 'pro', 'enterprise')
 - `exp`: The token's expiration timestamp
@@ -221,9 +222,9 @@ Response:
 
 ```json
 {
-"name": "John Doe",
-"dailyNotifications": true,
-"weeklySummary": true
+  "name": "John Doe",
+  "dailyNotifications": true,
+  "weeklySummary": true
 }
 ```
 
@@ -235,9 +236,9 @@ Request:
 
 ```json
 {
-"name": "John Smith",
-"dailyNotifications": false,
-"weeklySummary": true
+  "name": "John Smith",
+  "dailyNotifications": false,
+  "weeklySummary": true
 }
 ```
 
@@ -245,7 +246,7 @@ Response:
 
 ```json
 {
-"message": "Settings updated successfully"
+  "message": "Settings updated successfully"
 }
 ```
 

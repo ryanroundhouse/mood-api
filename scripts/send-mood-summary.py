@@ -146,6 +146,8 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights):
         <p>{openai_insights['Answer2']}</p>
         <h3>Small Win of the Week</h3>
         <p>{openai_insights['Answer3']}</p>
+        <h3>Mood Prediction</h3>
+        <p>{openai_insights['Answer4']}</p>
         """
 
     html_content += """
@@ -423,6 +425,8 @@ def get_openai_insights(moods):
     Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
 
     Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.
+
+    Answer4: What's a prediction for the upcoming week you would make for moods (positive prediction only - nothing negative please).
 
     Sample data:
     {moods}

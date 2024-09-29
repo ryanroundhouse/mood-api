@@ -58,7 +58,68 @@
       #activitiesList button:hover {
         background-color: #c82333;
       }
+      /* Additional styles for the account settings page */
+      .settings-container {
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .settings-container h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #333;
+      }
+      .settings-form label {
+        display: block;
+        margin-bottom: 5px;
+        color: #555;
+      }
+      .settings-form input {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .upgrade-section {
+        margin-top: 40px;
+        padding: 20px;
+        background: #f9f9f9;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .upgrade-section h3 {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #333;
+      }
+      .upgrade-section #card-element {
+        margin-top: 20px;
+        margin-bottom: 10px;
+      }
+      .upgrade-section #card-errors {
+        margin-top: 10px;
+        margin-bottom: 20px;
+        color: red;
+      }
+      .upgrade-section button {
+        width: 100%;
+        padding: 12px;
+        background: linear-gradient(135deg, #6a89cc, #b8e994);
+        color: #fff;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        transition: opacity 0.3s ease;
+      }
+      .upgrade-section button:hover {
+        opacity: 0.9;
+      }
     </style>
+    <script src="https://js.stripe.com/v3/"></script>
   </head>
   <body>
     <header>
@@ -115,6 +176,20 @@
         <input type="text" id="newActivity" placeholder="New activity" />
         <button id="addActivity">Add Activity</button>
       </div>
+
+      <div id="upgradeSection" class="upgrade-section">
+        <h3>Upgrade to Pro ($4.99 per month)</h3>
+        <div id="card-element">
+          <!-- A Stripe Element will be inserted here. -->
+        </div>
+        <div id="card-errors" role="alert"></div>
+        <button id="upgradeButton">Pay Now</button>
+      </div>
+
+      <div id="downgradeSection" style="display: none; margin-top: 20px">
+        <h3>Downgrade to Basic</h3>
+        <button id="downgradeButton">Cancel Subscription</button>
+      </div>
     </section>
 
     <script>
@@ -141,10 +216,14 @@
             document.getElementById('weeklySummary').checked =
               settings.weeklySummary;
 
-            // Check user's account level and show export button if applicable
-            const accountLevel = JSON.parse(
-              atob(token.split('.')[1])
-            ).accountLevel;
+            // Store user details for later use
+            window.userDetails = {
+              name: settings.name,
+              email: settings.email,
+            };
+
+            // Check user's account level and show appropriate sections
+            const accountLevel = settings.accountLevel;
             console.log(`User account level: ${accountLevel}`);
             if (accountLevel === 'pro' || accountLevel === 'enterprise') {
               document.getElementById('exportContainer').style.display =
@@ -152,6 +231,9 @@
               document.getElementById(
                 'customActivitiesContainer'
               ).style.display = 'block';
+              document.getElementById('upgradeSection').style.display = 'none';
+              document.getElementById('downgradeSection').style.display =
+                'block';
               fetchCustomActivities();
               console.log(
                 'Export button and custom activities displayed for pro/enterprise user'
@@ -376,6 +458,100 @@
       document
         .getElementById('addActivity')
         .addEventListener('click', addActivity);
+
+      const stripe = Stripe(
+        'pk_test_51Q4MRsJCefXRKysVW9lkSu5vJ913qKJOerbHbkVXi03qknpd172AqT6sGmaDPf4Zp0DD8LBIuS1Qibq8YSTxbSW400vl4twH5X'
+      );
+      const elements = stripe.elements();
+      const card = elements.create('card');
+      card.mount('#card-element');
+
+      card.on('change', ({ error }) => {
+        const displayError = document.getElementById('card-errors');
+        if (error) {
+          displayError.textContent = error.message;
+        } else {
+          displayError.textContent = '';
+        }
+      });
+
+      document
+        .getElementById('upgradeButton')
+        .addEventListener('click', async (event) => {
+          event.preventDefault();
+
+          const { paymentMethod, error } = await stripe.createPaymentMethod({
+            type: 'card',
+            card: card,
+            billing_details: {
+              name: window.userDetails.name,
+              email: window.userDetails.email,
+            },
+          });
+
+          if (error) {
+            const errorElement = document.getElementById('card-errors');
+            errorElement.textContent = error.message;
+            return;
+          }
+
+          const paymentMethodId = paymentMethod.id;
+
+          try {
+            const response = await fetch('/upgrade', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ paymentMethodId }),
+            });
+
+            if (response.ok) {
+              alert('Your account has been upgraded to Pro!');
+              // Optionally, you can redirect the user or update the UI to reflect the new account status
+            } else {
+              const errorData = await response.json();
+              alert('Error: ' + errorData.error);
+            }
+          } catch (error) {
+            console.error('Error during upgrade:', error);
+            alert('An error occurred. Please try again.');
+          }
+        });
+
+      // Downgrade functionality
+      document
+        .getElementById('downgradeButton')
+        .addEventListener('click', async (event) => {
+          event.preventDefault();
+          const confirmDowngrade = confirm(
+            'Are you sure you want to cancel your subscription?'
+          );
+          if (confirmDowngrade) {
+            try {
+              const response = await fetch('/downgrade', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+
+              if (response.ok) {
+                alert('Your account has been downgraded.');
+                // Optionally, you can redirect the user or update the UI to reflect the new account status
+                window.location.reload();
+              } else {
+                const errorData = await response.json();
+                alert('Error: ' + errorData.error);
+              }
+            } catch (error) {
+              console.error('Error during downgrade:', error);
+              alert('An error occurred. Please try again.');
+            }
+          }
+        });
     </script>
   </body>
 </html>

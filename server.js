@@ -11,6 +11,7 @@ const port = 3000;
 const winston = require('winston');
 const fs = require('fs');
 const mg = require('nodemailer-mailgun-transport');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -131,6 +132,36 @@ db.serialize(() => {
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
+
+  // Add columns to users table if they don't exist
+  db.all(`PRAGMA table_info(users)`, (err, rows) => {
+    if (err) {
+      logger.error('Error checking users table schema:', err);
+    } else if (rows && Array.isArray(rows)) {
+      const columnsToAdd = [
+        { name: 'stripeCustomerId', type: 'TEXT' },
+        { name: 'stripeSubscriptionId', type: 'TEXT' },
+      ];
+
+      columnsToAdd.forEach((column) => {
+        const columnExists = rows.some((row) => row.name === column.name);
+        if (!columnExists) {
+          db.run(
+            `ALTER TABLE users ADD COLUMN ${column.name} ${column.type}`,
+            (alterErr) => {
+              if (alterErr) {
+                logger.error(`Error adding ${column.name} column:`, alterErr);
+              } else {
+                logger.info(`${column.name} column added to users table`);
+              }
+            }
+          );
+        }
+      });
+    } else {
+      logger.error('Unexpected result from PRAGMA table_info(users)');
+    }
+  });
 });
 
 // Set the base URL from environment variable or default to localhost
@@ -418,6 +449,7 @@ app.post(
     body('email').isEmail(),
     body('name').optional().trim().escape(),
     body('password').isLength({ min: 6 }),
+    body('paymentMethodId').optional().isString(), // Make payment method ID optional
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -426,13 +458,61 @@ app.post(
     }
 
     try {
-      const { email, name, password } = req.body;
+      const { email, name, password, paymentMethodId } = req.body;
       const hashedPassword = await bcrypt.hash(password, 10);
       const verificationToken = crypto.randomBytes(20).toString('hex');
 
+      let stripeCustomerId = null;
+      let stripeSubscriptionId = null;
+      let accountLevel = 'basic';
+
+      if (paymentMethodId) {
+        // Create Stripe customer
+        const customer = await stripe.customers.create({
+          email,
+          name,
+          metadata: { verificationToken },
+        });
+
+        // Attach payment method to customer
+        await stripe.paymentMethods.attach(paymentMethodId, {
+          customer: customer.id,
+        });
+
+        // Set the default payment method for the customer
+        await stripe.customers.update(customer.id, {
+          invoice_settings: {
+            default_payment_method: paymentMethodId,
+          },
+        });
+
+        // Create subscription
+        const subscription = await stripe.subscriptions.create({
+          customer: customer.id,
+          items: [{ price: process.env.STRIPE_PRICE_ID }],
+          expand: ['latest_invoice.payment_intent'],
+        });
+
+        stripeCustomerId = customer.id;
+        stripeSubscriptionId = subscription.id;
+
+        // Update account level based on payment status
+        if (subscription.latest_invoice.payment_intent.status === 'succeeded') {
+          accountLevel = 'pro';
+        }
+      }
+
       db.run(
-        `INSERT INTO users (email, name, password, verificationToken) VALUES (?, ?, ?, ?)`,
-        [email, name, hashedPassword, verificationToken],
+        `INSERT INTO users (email, name, password, verificationToken, stripeCustomerId, stripeSubscriptionId, accountLevel) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          email,
+          name,
+          hashedPassword,
+          verificationToken,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          accountLevel,
+        ],
         function (err) {
           if (err) {
             if (err.code === 'SQLITE_CONSTRAINT') {
@@ -837,11 +917,9 @@ app.get('/user/activities/:authCode', (req, res) => {
             (userRow.accountLevel !== 'pro' &&
               userRow.accountLevel !== 'enterprise')
           ) {
-            return res
-              .status(403)
-              .json({
-                error: 'Access denied. Pro or Enterprise account required.',
-              });
+            return res.status(403).json({
+              error: 'Access denied. Pro or Enterprise account required.',
+            });
           }
 
           // Fetch custom activities
@@ -920,6 +998,38 @@ app.post(
     );
   }
 );
+
+// Endpoint to handle Stripe webhook events
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    logger.error('Webhook signature verification failed:', err);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      const paymentIntent = event.data.object;
+      logger.info(`PaymentIntent for ${paymentIntent.amount} was successful!`);
+      // Handle successful payment here
+      break;
+    // Add more event types as needed
+    default:
+      logger.warn(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
 
 app.listen(port, () => {
   logger.info(`API listening at http://localhost:${port}`);

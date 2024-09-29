@@ -156,9 +156,17 @@
     </footer>
 
     <script>
-      const stripe = Stripe(
-        'pk_test_51Q4MRsJCefXRKysVW9lkSu5vJ913qKJOerbHbkVXi03qknpd172AqT6sGmaDPf4Zp0DD8LBIuS1Qibq8YSTxbSW400vl4twH5X'
-      );
+      // Add this configuration object at the beginning of your script
+      const config = {
+        stripePublishableKey:
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1'
+            ? 'pk_test_51Q4MRsJCefXRKysVW9lkSu5vJ913qKJOerbHbkVXi03qknpd172AqT6sGmaDPf4Zp0DD8LBIuS1Qibq8YSTxbSW400vl4twH5X'
+            : 'pk_live_51Q4MRsJCefXRKysVAmn5vPrGKbkAei95VaU91eeuV7pKrRnRfLHWq8f9I60ore0hb4XsoHfRCn4PsHQxsGif5YgV00eCcSUIOt',
+      };
+
+      // Replace the Stripe initialization with this:
+      const stripe = Stripe(config.stripePublishableKey);
       const elements = stripe.elements();
       const card = elements.create('card');
       card.mount('#card-element');

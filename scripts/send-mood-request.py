@@ -7,6 +7,7 @@ import time
 from dotenv import load_dotenv
 import uuid
 import random
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +33,18 @@ def get_users_with_notifications():
     users = cursor.fetchall()
     conn.close()
     return users
+
+def user_needs_reminder(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    today = datetime.now().date()
+    cursor.execute("""
+        SELECT COUNT(*) FROM moods 
+        WHERE userId = ? AND DATE(datetime) = ?
+    """, (user_id, today))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count == 0
 
 def generate_auth_code(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -124,8 +137,11 @@ def send_email(to_email, auth_code):
 def main():
     users = get_users_with_notifications()
     for user_id, email in users:
-        auth_code = generate_auth_code(user_id)
-        send_email(email, auth_code)
+        if user_needs_reminder(user_id):
+            auth_code = generate_auth_code(user_id)
+            send_email(email, auth_code)
+        else:
+            print(f"User {user_id} has already submitted a mood entry today. Skipping reminder.")
 
 if __name__ == "__main__":
     main()

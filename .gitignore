@@ -92,3 +92,5 @@ Thumbs.db
 
 # other stuff
 database.sqlite
+scripts/my_env
+.venv

@@ -15,6 +15,7 @@ nltk.download('opinion_lexicon')
 nltk.download('wordnet')
 from nltk.corpus import opinion_lexicon
 from nltk.corpus import wordnet
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
@@ -27,11 +28,15 @@ SENDER_EMAIL = os.getenv("NOREPLY_EMAIL")
 # Database configuration
 DB_PATH = "../database.sqlite"
 
+# OpenAI configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
 def get_users():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT users.id, users.email 
+        SELECT users.id, users.email, users.accountLevel
         FROM users 
         JOIN notifications ON users.id = notifications.userId 
         WHERE users.isVerified = 1 AND notifications.weeklySummary = 1
@@ -113,7 +118,7 @@ def generate_calendar_html(year, month, moods):
     
     return html
 
-def send_email(to_email, calendar_html, basic_stats):
+def send_email(to_email, calendar_html, basic_stats, openai_insights):
     subject = "Your Monthly Mood Calendar"
     
     html_content = f"""
@@ -129,6 +134,20 @@ def send_email(to_email, calendar_html, basic_stats):
         <h2 style="color: #6a89cc;">Your Monthly Mood Calendar</h2>
         <p>Here's a summary of your mood entries for this month:</p>
         {calendar_html}
+    """
+
+    if openai_insights:
+        html_content += f"""
+        <h2 style="color: #6a89cc;">AI-Generated Insights</h2>
+        <h3>Mood Insights</h3>
+        <p>{openai_insights['Answer1']}</p>
+        <h3>Trends and Correlations</h3>
+        <p>{openai_insights['Answer2']}</p>
+        <h3>Small Win of the Week</h3>
+        <p>{openai_insights['Answer3']}</p>
+        """
+
+    html_content += """
         <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work and have a wonderful week ahead!</p>
         <p>Best regards,
         <br/>Your Moodful</p>
@@ -391,6 +410,33 @@ def generate_mood_summary(user_id, start_date, end_date):
         email_body += f"<p>{i}. **{stat['name']}**: {stat['description']}\n\n</p>"
 
     return email_body
+
+def get_openai_insights(moods):
+    prompt = """
+    Given the sample data, answer some questions for me. Your response must be in json format with 'Answer#' as the key and the answer as the value for that key!
+    The 'Answer#' refers to the question number I've asked you to answer. Mood ratings are on a scale from 0-4. Activities could be considered tags or just things of note that took place that day. Comments are freeform text optionally input from the user.
+    Phrase the answers as if you're talking to the person who's mood entries are being analyzed.
+
+    Answer1: What are some insights you can find with how the comments, activities, and mood ratings relate to one another.
+
+    Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
+
+    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.
+
+    Sample data:
+    {moods}
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that analyzes mood data."},
+            {"role": "user", "content": prompt.format(moods=json.dumps(moods, indent=2))}
+        ]
+    )
+
+    return json.loads(response.choices[0].message.content)
+
 def main():
     users = get_users()
     current_date = datetime.now()
@@ -398,11 +444,17 @@ def main():
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
     
-    for user_id, email in users:
+    for user_id, email, account_level in users:
         moods = get_user_moods(user_id, year, month)
         calendar_html = generate_calendar_html(year, month, moods)
         basic_stats = generate_mood_summary(user_id, start_date, end_date)
-        send_email(email, calendar_html, basic_stats)
+        
+        if account_level in ['pro', 'enterprise']:
+            openai_insights = get_openai_insights(moods)
+        else:
+            openai_insights = None
+        
+        send_email(email, calendar_html, basic_stats, openai_insights)
 
 if __name__ == "__main__":
     main()

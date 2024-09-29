@@ -63,6 +63,7 @@ def get_user_moods(user_id, year, month):
     return moods
 
 def generate_calendar_html(year, month, moods):
+    calendar.setfirstweekday(calendar.SUNDAY)  # Set the first day of the week to Sunday
     cal = calendar.monthcalendar(year, month)
     month_name = calendar.month_name[month]
     

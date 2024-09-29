@@ -11,6 +11,7 @@ const port = 3000;
 const winston = require('winston');
 const fs = require('fs');
 const mg = require('nodemailer-mailgun-transport');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -131,6 +132,36 @@ db.serialize(() => {
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
+
+  // Add columns to users table if they don't exist
+  db.all(`PRAGMA table_info(users)`, (err, rows) => {
+    if (err) {
+      logger.error('Error checking users table schema:', err);
+    } else if (rows && Array.isArray(rows)) {
+      const columnsToAdd = [
+        { name: 'stripeCustomerId', type: 'TEXT' },
+        { name: 'stripeSubscriptionId', type: 'TEXT' },
+      ];
+
+      columnsToAdd.forEach((column) => {
+        const columnExists = rows.some((row) => row.name === column.name);
+        if (!columnExists) {
+          db.run(
+            `ALTER TABLE users ADD COLUMN ${column.name} ${column.type}`,
+            (alterErr) => {
+              if (alterErr) {
+                logger.error(`Error adding ${column.name} column:`, alterErr);
+              } else {
+                logger.info(`${column.name} column added to users table`);
+              }
+            }
+          );
+        }
+      });
+    } else {
+      logger.error('Unexpected result from PRAGMA table_info(users)');
+    }
+  });
 });
 
 // Set the base URL from environment variable or default to localhost
@@ -196,7 +227,7 @@ app.get('/user/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT users.name, notifications.dailyNotifications, notifications.weeklySummary 
+    `SELECT users.name, users.email, users.accountLevel, notifications.dailyNotifications, notifications.weeklySummary 
      FROM users 
      LEFT JOIN notifications ON users.id = notifications.userId 
      WHERE users.id = ?`,
@@ -213,6 +244,8 @@ app.get('/user/settings', authenticateToken, (req, res) => {
 
       const userSettings = {
         name: row.name,
+        email: row.email,
+        accountLevel: row.accountLevel,
         dailyNotifications: row.dailyNotifications === 1,
         weeklySummary: row.weeklySummary === 1,
       };
@@ -418,6 +451,7 @@ app.post(
     body('email').isEmail(),
     body('name').optional().trim().escape(),
     body('password').isLength({ min: 6 }),
+    body('paymentMethodId').optional().isString(), // Make payment method ID optional
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -426,13 +460,61 @@ app.post(
     }
 
     try {
-      const { email, name, password } = req.body;
+      const { email, name, password, paymentMethodId } = req.body;
       const hashedPassword = await bcrypt.hash(password, 10);
       const verificationToken = crypto.randomBytes(20).toString('hex');
 
+      let stripeCustomerId = null;
+      let stripeSubscriptionId = null;
+      let accountLevel = 'basic';
+
+      if (paymentMethodId) {
+        // Create Stripe customer
+        const customer = await stripe.customers.create({
+          email,
+          name,
+          metadata: { verificationToken },
+        });
+
+        // Attach payment method to customer
+        await stripe.paymentMethods.attach(paymentMethodId, {
+          customer: customer.id,
+        });
+
+        // Set the default payment method for the customer
+        await stripe.customers.update(customer.id, {
+          invoice_settings: {
+            default_payment_method: paymentMethodId,
+          },
+        });
+
+        // Create subscription
+        const subscription = await stripe.subscriptions.create({
+          customer: customer.id,
+          items: [{ price: process.env.STRIPE_PRICE_ID }],
+          expand: ['latest_invoice.payment_intent'],
+        });
+
+        stripeCustomerId = customer.id;
+        stripeSubscriptionId = subscription.id;
+
+        // Update account level based on payment status
+        if (subscription.latest_invoice.payment_intent.status === 'succeeded') {
+          accountLevel = 'pro';
+        }
+      }
+
       db.run(
-        `INSERT INTO users (email, name, password, verificationToken) VALUES (?, ?, ?, ?)`,
-        [email, name, hashedPassword, verificationToken],
+        `INSERT INTO users (email, name, password, verificationToken, stripeCustomerId, stripeSubscriptionId, accountLevel) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          email,
+          name,
+          hashedPassword,
+          verificationToken,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          accountLevel,
+        ],
         function (err) {
           if (err) {
             if (err.code === 'SQLITE_CONSTRAINT') {
@@ -837,11 +919,9 @@ app.get('/user/activities/:authCode', (req, res) => {
             (userRow.accountLevel !== 'pro' &&
               userRow.accountLevel !== 'enterprise')
           ) {
-            return res
-              .status(403)
-              .json({
-                error: 'Access denied. Pro or Enterprise account required.',
-              });
+            return res.status(403).json({
+              error: 'Access denied. Pro or Enterprise account required.',
+            });
           }
 
           // Fetch custom activities
@@ -920,6 +1000,170 @@ app.post(
     );
   }
 );
+
+// Endpoint to handle Stripe webhook events
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    logger.error('Webhook signature verification failed:', err);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      const paymentIntent = event.data.object;
+      logger.info(`PaymentIntent for ${paymentIntent.amount} was successful!`);
+      // Handle successful payment here
+      break;
+    // Add more event types as needed
+    default:
+      logger.warn(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
+
+// Endpoint to handle account upgrade
+app.post('/upgrade', authenticateToken, async (req, res) => {
+  const { paymentMethodId } = req.body;
+  const userId = req.user.id;
+
+  try {
+    // Fetch user details from the database
+    db.get(
+      `SELECT email, name, stripeCustomerId FROM users WHERE id = ?`,
+      [userId],
+      async (err, user) => {
+        if (err) {
+          logger.error('Error fetching user details:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (!user) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+
+        let stripeCustomerId = user.stripeCustomerId;
+
+        if (!stripeCustomerId) {
+          // Create Stripe customer if not already created
+          const customer = await stripe.customers.create({
+            email: user.email,
+            name: user.name,
+          });
+
+          stripeCustomerId = customer.id;
+
+          // Update user with the new Stripe customer ID
+          db.run(
+            `UPDATE users SET stripeCustomerId = ? WHERE id = ?`,
+            [stripeCustomerId, userId],
+            (updateErr) => {
+              if (updateErr) {
+                logger.error('Error updating Stripe customer ID:', updateErr);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+            }
+          );
+        }
+
+        // Attach payment method to customer
+        await stripe.paymentMethods.attach(paymentMethodId, {
+          customer: stripeCustomerId,
+        });
+
+        // Set the default payment method for the customer
+        await stripe.customers.update(stripeCustomerId, {
+          invoice_settings: {
+            default_payment_method: paymentMethodId,
+          },
+        });
+
+        // Create subscription
+        const subscription = await stripe.subscriptions.create({
+          customer: stripeCustomerId,
+          items: [{ price: process.env.STRIPE_PRICE_ID }],
+          expand: ['latest_invoice.payment_intent'],
+        });
+
+        // Update user with the new subscription ID and account level
+        db.run(
+          `UPDATE users SET stripeSubscriptionId = ?, accountLevel = 'pro' WHERE id = ?`,
+          [subscription.id, userId],
+          (updateErr) => {
+            if (updateErr) {
+              logger.error(
+                'Error updating subscription ID and account level:',
+                updateErr
+              );
+              return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            logger.info(`User upgraded to Pro: ${user.email}`);
+            res.json({ message: 'Your account has been upgraded to Pro!' });
+          }
+        );
+      }
+    );
+  } catch (error) {
+    logger.error('Error during upgrade:', error);
+    res.status(500).json({ error: 'An error occurred. Please try again.' });
+  }
+});
+
+// Endpoint to handle account downgrade
+app.post('/downgrade', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    // Fetch user details from the database
+    db.get(
+      `SELECT stripeSubscriptionId FROM users WHERE id = ?`,
+      [userId],
+      async (err, user) => {
+        if (err) {
+          logger.error('Error fetching user details:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (!user || !user.stripeSubscriptionId) {
+          return res.status(404).json({ error: 'Subscription not found' });
+        }
+
+        // Cancel the Stripe subscription
+        await stripe.subscriptions.cancel(user.stripeSubscriptionId);
+
+        // Update user account level to 'basic' and remove subscription ID
+        db.run(
+          `UPDATE users SET stripeSubscriptionId = NULL, accountLevel = 'basic' WHERE id = ?`,
+          [userId],
+          (updateErr) => {
+            if (updateErr) {
+              logger.error('Error updating account level:', updateErr);
+              return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            logger.info(`User downgraded to Basic: ${userId}`);
+            res.json({ message: 'Your account has been downgraded to Basic.' });
+          }
+        );
+      }
+    );
+  } catch (error) {
+    logger.error('Error during downgrade:', error);
+    res.status(500).json({ error: 'An error occurred. Please try again.' });
+  }
+});
 
 app.listen(port, () => {
   logger.info(`API listening at http://localhost:${port}`);

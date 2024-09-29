@@ -32,6 +32,15 @@
         border: 1px solid #ddd;
         border-radius: 4px;
       }
+      .register-form #card-element {
+        margin-top: 20px;
+        margin-bottom: 10px;
+      }
+      .register-form #card-errors {
+        margin-top: 10px;
+        margin-bottom: 20px;
+        color: red;
+      }
       .register-form button {
         width: 100%;
         padding: 12px;
@@ -78,7 +87,13 @@
       footer ul li a:hover {
         color: #5a79bc;
       }
+      .register-form .radio-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
     </style>
+    <script src="https://js.stripe.com/v3/"></script>
   </head>
   <body>
     <header>
@@ -105,6 +120,23 @@
         <label for="password">Password:</label>
         <input type="password" id="password" name="password" required />
 
+        <label>Account Type:</label>
+        <div class="radio-group">
+          <input type="radio" id="free" name="accountType" value="free" />
+          <label for="free">Free Account</label>
+        </div>
+        <div class="radio-group">
+          <input type="radio" id="pro" name="accountType" value="pro" checked />
+          <label for="pro">Pro Account</label>
+        </div>
+
+        <div id="payment-section">
+          <div id="card-element">
+            <!-- A Stripe Element will be inserted here. -->
+          </div>
+          <div id="card-errors" role="alert"></div>
+        </div>
+
         <button type="submit">Register</button>
       </form>
       <div class="login-link">
@@ -124,14 +156,100 @@
     </footer>
 
     <script>
+      // Add this configuration object at the beginning of your script
+      const config = {
+        stripePublishableKey:
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1'
+            ? 'pk_test_51Q4MRsJCefXRKysVW9lkSu5vJ913qKJOerbHbkVXi03qknpd172AqT6sGmaDPf4Zp0DD8LBIuS1Qibq8YSTxbSW400vl4twH5X'
+            : 'pk_live_51Q4MRsJCefXRKysVAmn5vPrGKbkAei95VaU91eeuV7pKrRnRfLHWq8f9I60ore0hb4XsoHfRCn4PsHQxsGif5YgV00eCcSUIOt',
+      };
+
+      // Replace the Stripe initialization with this:
+      const stripe = Stripe(config.stripePublishableKey);
+      const elements = stripe.elements();
+      const card = elements.create('card');
+      card.mount('#card-element');
+
+      card.on('change', ({ error }) => {
+        const displayError = document.getElementById('card-errors');
+        if (error) {
+          displayError.textContent = error.message;
+        } else {
+          displayError.textContent = '';
+        }
+      });
+
+      document.querySelectorAll('input[name="accountType"]').forEach((elem) => {
+        elem.addEventListener('change', (event) => {
+          const paymentSection = document.getElementById('payment-section');
+          if (event.target.value === 'pro') {
+            paymentSection.style.display = 'block';
+          } else {
+            paymentSection.style.display = 'none';
+          }
+        });
+      });
+
+      let isSubmitting = false;
+
+      function setFormDisabledState(isDisabled) {
+        const formElements = document.querySelectorAll(
+          '#registerForm input, #registerForm button'
+        );
+        formElements.forEach((element) => {
+          element.disabled = isDisabled;
+        });
+      }
+
       document
         .getElementById('registerForm')
         .addEventListener('submit', async (event) => {
           event.preventDefault();
 
+          if (isSubmitting) return; // Prevent multiple submissions
+          isSubmitting = true;
+          setFormDisabledState(true); // Disable form elements
+
           const name = document.getElementById('name').value;
           const email = document.getElementById('email').value;
           const password = document.getElementById('password').value;
+          const accountType = document.querySelector(
+            'input[name="accountType"]:checked'
+          ).value;
+
+          let paymentMethodId = null;
+          if (accountType === 'pro') {
+            const { paymentMethod, error } = await stripe.createPaymentMethod({
+              type: 'card',
+              card: card,
+              billing_details: {
+                name: name,
+                email: email,
+              },
+            });
+
+            if (error) {
+              const errorElement = document.getElementById('card-errors');
+              errorElement.textContent = error.message;
+              setFormDisabledState(false); // Re-enable form elements on error
+              isSubmitting = false;
+              return;
+            } else {
+              paymentMethodId = paymentMethod.id;
+            }
+          }
+
+          const requestBody = {
+            name,
+            email,
+            password,
+            accountType,
+          };
+
+          if (paymentMethodId) {
+            requestBody.paymentMethodId = paymentMethodId;
+          }
 
           try {
             const response = await fetch('/register', {
@@ -139,11 +257,20 @@
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ name, email, password }),
+              body: JSON.stringify(requestBody),
             });
 
             if (response.ok) {
-              alert('Registration successful!');
+              document.getElementById('registerForm').style.display = 'none';
+              document.querySelector('.login-link').style.display = 'none';
+              document.querySelector('.register-container h2').textContent =
+                'Thanks for joining!';
+              const confirmationMessage = document.createElement('p');
+              confirmationMessage.textContent =
+                'Please check your email to confirm your account creation.';
+              document
+                .querySelector('.register-container')
+                .appendChild(confirmationMessage);
             } else {
               const errorData = await response.json();
               alert('Error: ' + errorData.error);
@@ -151,8 +278,19 @@
           } catch (error) {
             console.error('Error during registration:', error);
             alert('An error occurred. Please try again.');
+          } finally {
+            setFormDisabledState(false); // Re-enable form elements after processing
+            isSubmitting = false;
           }
         });
+
+      // Initially hide the payment section if "Free Account" is selected
+      if (
+        document.querySelector('input[name="accountType"]:checked').value ===
+        'free'
+      ) {
+        document.getElementById('payment-section').style.display = 'none';
+      }
     </script>
   </body>
 </html>

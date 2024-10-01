@@ -1158,20 +1158,14 @@ app.post('/downgrade', authenticateToken, async (req, res) => {
 // Serve static files from the 'app' directory
 app.use(express.static(path.join(__dirname, 'app')));
 
-// For any other route, try to serve the corresponding HTML file
-app.get('*', (req, res) => {
-  const filePath = path.join(__dirname, 'app', req.path + '.html');
-
-  fs.access(filePath, fs.constants.F_OK, (err) => {
-    if (err) {
-      // If the file doesn't exist, serve the 404 page
-      res.status(404).sendFile(path.join(__dirname, 'app', '404.html'));
-    } else {
-      // If the file exists, serve it
-      res.sendFile(filePath);
-    }
-  });
-});
+// // 404 handler
+// app.use((req, res, next) => {
+//   if (req.accepts('html')) {
+//     res.status(404).sendFile(path.join(__dirname, 'app', '404.html'));
+//   } else {
+//     res.status(404).json({ error: 'Not found' });
+//   }
+// });
 
 app.listen(port, () => {
   logger.info(`API listening at http://localhost:${port}`);

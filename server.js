@@ -175,7 +175,6 @@ const NOREPLY_EMAIL = process.env.NOREPLY_EMAIL;
 const MY_EMAIL = process.env.EMAIL_ADDRESS;
 
 app.use(express.json());
-app.use(express.static('app'));
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error(err.stack);
@@ -947,15 +946,6 @@ app.get('/user/activities/:authCode', (req, res) => {
   );
 });
 
-app.get('*', (req, res) => {
-  const filePath = path.join(__dirname, 'app', req.path);
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-  } else {
-    res.sendFile(path.join(__dirname, 'app', 'index.html'));
-  }
-});
-
 // Contact form submission endpoint
 app.post(
   '/contact',
@@ -1163,6 +1153,24 @@ app.post('/downgrade', authenticateToken, async (req, res) => {
     logger.error('Error during downgrade:', error);
     res.status(500).json({ error: 'An error occurred. Please try again.' });
   }
+});
+
+// Serve static files from the 'app' directory
+app.use(express.static(path.join(__dirname, 'app')));
+
+// For any other route, try to serve the corresponding HTML file
+app.get('*', (req, res) => {
+  const filePath = path.join(__dirname, 'app', req.path + '.html');
+
+  fs.access(filePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      // If the file doesn't exist, serve the 404 page
+      res.status(404).sendFile(path.join(__dirname, 'app', '404.html'));
+    } else {
+      // If the file exists, serve it
+      res.sendFile(filePath);
+    }
+  });
 });
 
 app.listen(port, () => {

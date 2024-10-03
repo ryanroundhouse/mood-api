@@ -225,20 +225,11 @@ const checkProOrEnterprise = (req, res, next) => {
 
 // Define a general rate limiter with debugging
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 5 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res, next, options) => {
-    console.log('Rate limit info:', {
-      currentUsage: req.rateLimit.current,
-      limit: req.rateLimit.limit,
-      remaining: req.rateLimit.remaining,
-      resetTime: new Date(req.rateLimit.resetTime).toLocaleString(),
-    });
-    res.status(options.statusCode).send(options.message);
-  },
 });
 
 // Apply the general rate limiter to all routes
@@ -247,7 +238,7 @@ app.use(generalLimiter);
 // Define a stricter rate limiter for sensitive routes
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per windowMs
+  max: 50, // Limit each IP to 5 requests per windowMs
   message:
     'Too many requests for this sensitive operation, please try again later.',
   standardHeaders: true,

@@ -4,16 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Contact Us - Moodful | Get in Touch for Support and Feedback</title>
-    <meta name="description" content="Have questions or feedback about Moodful? Contact our team for support, inquiries, or to share your thoughts on our mood tracking app.">
-    <meta name="keywords" content="Moodful, contact, support, feedback, mood tracking app, customer service">
-    <meta name="author" content="Moodful Team">
-    <meta property="og:title" content="Contact Moodful - We're Here to Help">
-    <meta property="og:description" content="Reach out to the Moodful team for support, inquiries, or to share your feedback on our mood tracking app.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://moodful.ca/contact.html">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Contact Moodful - We're Here to Help">
-    <meta name="twitter:description" content="Reach out to the Moodful team for support, inquiries, or to share your feedback on our mood tracking app.">
+    <meta
+      name="description"
+      content="Have questions or feedback about Moodful? Contact our team for support, inquiries, or to share your thoughts on our mood tracking app."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, contact, support, feedback, mood tracking app, customer service"
+    />
+    <meta name="author" content="Moodful Team" />
+    <meta property="og:title" content="Contact Moodful - We're Here to Help" />
+    <meta
+      property="og:description"
+      content="Reach out to the Moodful team for support, inquiries, or to share your feedback on our mood tracking app."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://moodful.ca/contact.html" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Contact Moodful - We're Here to Help" />
+    <meta
+      name="twitter:description"
+      content="Reach out to the Moodful team for support, inquiries, or to share your feedback on our mood tracking app."
+    />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .contact-hero h1 {
@@ -68,6 +80,7 @@
         opacity: 0.9;
       }
     </style>
+    <script src="https://www.google.com/recaptcha/api.js?render=6LemNFYqAAAAAOLKr63x6MWvHsrL9oJWUTkllXdW"></script>
   </head>
   <body>
     <header>
@@ -127,18 +140,31 @@
         .addEventListener('submit', async (event) => {
           event.preventDefault();
 
-          const name = document.getElementById('name').value;
-          const email = document.getElementById('email').value;
-          const subject = document.getElementById('subject').value;
-          const message = document.getElementById('message').value;
-
           try {
+            const token = await grecaptcha.execute(
+              '6LemNFYqAAAAAOLKr63x6MWvHsrL9oJWUTkllXdW',
+              {
+                action: 'submit',
+              }
+            );
+
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const subject = document.getElementById('subject').value;
+            const message = document.getElementById('message').value;
+
             const response = await fetch('/contact', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ name, email, subject, message }),
+              body: JSON.stringify({
+                name,
+                email,
+                subject,
+                message,
+                recaptchaToken: token,
+              }),
             });
 
             if (response.ok) {

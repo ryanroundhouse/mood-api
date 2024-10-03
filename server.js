@@ -12,6 +12,7 @@ const winston = require('winston');
 const fs = require('fs');
 const mg = require('nodemailer-mailgun-transport');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const axios = require('axios'); // Make sure to install axios: npm install axios
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -953,20 +954,39 @@ app.post(
     body('email').isEmail().normalizeEmail(),
     body('subject').trim().isLength({ min: 1, max: 200 }).escape(),
     body('message').trim().isLength({ min: 1, max: 1000 }).escape(),
+    body('recaptchaToken').notEmpty(),
   ],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, email, subject, message } = req.body;
+    const { name, email, subject, message, recaptchaToken } = req.body;
+
+    // Verify reCAPTCHA token
+    try {
+      const recaptchaResponse = await axios.post(
+        `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${recaptchaToken}`
+      );
+
+      if (
+        !recaptchaResponse.data.success ||
+        recaptchaResponse.data.score < 0.5
+      ) {
+        logger.warn(`reCAPTCHA verification failed for ${email}`);
+        return res.status(400).json({ error: 'reCAPTCHA verification failed' });
+      }
+    } catch (error) {
+      logger.error('Error verifying reCAPTCHA:', error);
+      return res.status(500).json({ error: 'Error verifying reCAPTCHA' });
+    }
 
     // Send email
     transporter.sendMail(
       {
         from: NOREPLY_EMAIL,
-        to: MY_EMAIL, // Send to yourself or a designated contact email
+        to: MY_EMAIL,
         subject: `New Contact Form Submission: ${subject}`,
         html: `
           <h3>New contact form submission</h3>

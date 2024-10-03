@@ -1158,15 +1158,6 @@ app.post('/downgrade', authenticateToken, async (req, res) => {
 // Serve static files from the 'app' directory
 app.use(express.static(path.join(__dirname, 'app')));
 
-// // 404 handler
-// app.use((req, res, next) => {
-//   if (req.accepts('html')) {
-//     res.status(404).sendFile(path.join(__dirname, 'app', '404.html'));
-//   } else {
-//     res.status(404).json({ error: 'Not found' });
-//   }
-// });
-
 app.listen(port, () => {
   logger.info(`API listening at http://localhost:${port}`);
 });

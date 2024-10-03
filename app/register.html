@@ -4,16 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Register - Moodful | Start Your Mood Tracking Journey</title>
-    <meta name="description" content="Sign up for Moodful and begin your journey to better emotional well-being. Create your account to track moods, gain insights, and improve your mental health.">
-    <meta name="keywords" content="Moodful, register, sign up, mood tracking, emotional well-being, mental health, account creation">
-    <meta name="robots" content="noindex, nofollow">
-    <meta property="og:title" content="Join Moodful - Start Your Emotional Well-being Journey">
-    <meta property="og:description" content="Create your Moodful account today and take the first step towards understanding and improving your emotional health through mood tracking.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://moodful.ca/register.html">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Join Moodful - Start Your Emotional Well-being Journey">
-    <meta name="twitter:description" content="Create your Moodful account today and take the first step towards understanding and improving your emotional health through mood tracking.">
+    <meta
+      name="description"
+      content="Sign up for Moodful and begin your journey to better emotional well-being. Create your account to track moods, gain insights, and improve your mental health."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, register, sign up, mood tracking, emotional well-being, mental health, account creation"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta
+      property="og:title"
+      content="Join Moodful - Start Your Emotional Well-being Journey"
+    />
+    <meta
+      property="og:description"
+      content="Create your Moodful account today and take the first step towards understanding and improving your emotional health through mood tracking."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://moodful.ca/register.html" />
+    <meta name="twitter:card" content="summary" />
+    <meta
+      name="twitter:title"
+      content="Join Moodful - Start Your Emotional Well-being Journey"
+    />
+    <meta
+      name="twitter:description"
+      content="Create your Moodful account today and take the first step towards understanding and improving your emotional health through mood tracking."
+    />
     <link rel="stylesheet" href="styles.css" />
     <style>
       /* Additional styles for the register page */
@@ -128,7 +146,13 @@
         <input type="email" id="email" name="email" required />
 
         <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required />
+        <input
+          type="password"
+          id="password"
+          name="password"
+          required
+          minlength="6"
+        />
 
         <label>Account Type:</label>
         <div class="radio-group">
@@ -227,6 +251,14 @@
           const accountType = document.querySelector(
             'input[name="accountType"]:checked'
           ).value;
+
+          // Add password length validation
+          if (password.length < 6) {
+            alert('Password must be at least 6 characters long.');
+            setFormDisabledState(false);
+            isSubmitting = false;
+            return;
+          }
 
           let paymentMethodId = null;
           if (accountType === 'pro') {

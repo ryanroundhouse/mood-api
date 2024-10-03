@@ -9,6 +9,10 @@ import uuid
 import random
 from datetime import datetime, timedelta
 
+# Add this function at the top of your file, after the imports
+def adapt_date(val):
+    return val.isoformat()
+
 # Load environment variables
 load_dotenv()
 
@@ -36,6 +40,8 @@ def get_users_with_notifications():
 
 def user_needs_reminder(user_id):
     conn = sqlite3.connect(DB_PATH)
+    # Register the date adapter
+    sqlite3.register_adapter(datetime, adapt_date)
     cursor = conn.cursor()
     today = datetime.now().date()
     cursor.execute("""

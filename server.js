@@ -13,6 +13,7 @@ const fs = require('fs');
 const mg = require('nodemailer-mailgun-transport');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const axios = require('axios'); // Make sure to install axios: npm install axios
+const rateLimit = require('express-rate-limit');
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -221,6 +222,45 @@ const checkProOrEnterprise = (req, res, next) => {
       .json({ error: 'Access denied. Pro or Enterprise account required.' });
   }
 };
+
+// Define a general rate limiter with debugging
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next, options) => {
+    console.log('Rate limit info:', {
+      currentUsage: req.rateLimit.current,
+      limit: req.rateLimit.limit,
+      remaining: req.rateLimit.remaining,
+      resetTime: new Date(req.rateLimit.resetTime).toLocaleString(),
+    });
+    res.status(options.statusCode).send(options.message);
+  },
+});
+
+// Apply the general rate limiter to all routes
+app.use(generalLimiter);
+
+// Define a stricter rate limiter for sensitive routes
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message:
+    'Too many requests for this sensitive operation, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply the strict rate limiter to sensitive routes
+app.use('/register', strictLimiter);
+app.use('/login', strictLimiter);
+app.use('/forgot-password', strictLimiter);
+app.use('/reset-password', strictLimiter);
+app.use('/upgrade', strictLimiter);
+app.use('/downgrade', strictLimiter);
 
 // Endpoint to get user settings
 app.get('/user/settings', authenticateToken, (req, res) => {
@@ -447,6 +487,7 @@ app.post(
 // register
 app.post(
   '/register',
+  strictLimiter,
   [
     body('email').isEmail(),
     body('name').optional().trim().escape(),
@@ -596,7 +637,7 @@ app.get('/verify/:token', (req, res) => {
 });
 
 // login
-app.post('/login', (req, res) => {
+app.post('/login', strictLimiter, (req, res) => {
   const { email, password } = req.body;
 
   db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user) => {
@@ -740,7 +781,7 @@ app.get('/moods', authenticateToken, (req, res) => {
 });
 
 // New route for forgot password
-app.post('/forgot-password', (req, res) => {
+app.post('/forgot-password', strictLimiter, (req, res) => {
   const { email } = req.body;
 
   db.get(`SELECT * FROM users WHERE email = ?`, [email], (err, user) => {
@@ -781,7 +822,7 @@ app.post('/forgot-password', (req, res) => {
 });
 
 // New route for password reset
-app.post('/reset-password/:token', (req, res) => {
+app.post('/reset-password/:token', strictLimiter, (req, res) => {
   const { token } = req.params;
   const { password } = req.body;
 
@@ -1043,7 +1084,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
 });
 
 // Endpoint to handle account upgrade
-app.post('/upgrade', authenticateToken, async (req, res) => {
+app.post('/upgrade', authenticateToken, strictLimiter, async (req, res) => {
   const { paymentMethodId } = req.body;
   const userId = req.user.id;
 
@@ -1131,7 +1172,7 @@ app.post('/upgrade', authenticateToken, async (req, res) => {
 });
 
 // Endpoint to handle account downgrade
-app.post('/downgrade', authenticateToken, async (req, res) => {
+app.post('/downgrade', authenticateToken, strictLimiter, async (req, res) => {
   const userId = req.user.id;
 
   try {

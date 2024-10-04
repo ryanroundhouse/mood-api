@@ -1,17 +1,18 @@
 import sqlite3
 import requests
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
-import time
 from dotenv import load_dotenv
 import uuid
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
+import pytz
 
 # Add this function at the top of your file, after the imports
 def adapt_date(val):
     return val.isoformat()
+
+# Add this constant after the imports
+EST_TIMEZONE = pytz.timezone('America/New_York')
 
 # Load environment variables
 load_dotenv()
@@ -43,7 +44,7 @@ def user_needs_reminder(user_id):
     # Register the date adapter
     sqlite3.register_adapter(datetime, adapt_date)
     cursor = conn.cursor()
-    today = datetime.now().date()
+    today = datetime.now(EST_TIMEZONE).date()
     cursor.execute("""
         SELECT COUNT(*) FROM moods 
         WHERE userId = ? AND DATE(datetime) = ?
@@ -56,8 +57,9 @@ def generate_auth_code(user_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     auth_code = os.urandom(16).hex()
+    expiration_time = int(datetime.now(EST_TIMEZONE).timestamp() + 86400) * 1000
     cursor.execute("INSERT INTO mood_auth_codes (userId, authCode, expiresAt) VALUES (?, ?, ?)",
-                   (user_id, auth_code, int(time.time()  + 86400) * 1000))
+                   (user_id, auth_code, expiration_time))
     conn.commit()
     conn.close()
     return auth_code

@@ -14,6 +14,7 @@ const mg = require('nodemailer-mailgun-transport');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const axios = require('axios'); // Make sure to install axios: npm install axios
 const rateLimit = require('express-rate-limit');
+const { DateTime } = require('luxon'); // Make sure to install luxon: npm install luxon
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -253,6 +254,16 @@ app.use('/reset-password', strictLimiter);
 app.use('/upgrade', strictLimiter);
 app.use('/downgrade', strictLimiter);
 
+// Helper function to get current EST datetime
+function getCurrentESTDateTime() {
+  return DateTime.now().setZone('America/New_York').toISO();
+}
+
+// Helper function to convert UTC to EST
+function convertToEST(utcDateString) {
+  return DateTime.fromISO(utcDateString).setZone('America/New_York').toISO();
+}
+
 // Endpoint to get user settings
 app.get('/user/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
@@ -370,6 +381,7 @@ app.post(
 
     const { authCode } = req.params;
     const { rating, comment, activities } = req.body;
+    const datetime = getCurrentESTDateTime();
 
     logger.info(`Attempting to post mood with auth code: ${authCode}`);
 
@@ -399,7 +411,6 @@ app.post(
         }
 
         const userId = row.userId;
-        const datetime = new Date().toISOString();
 
         logger.info(`Posting mood for user ${userId} at ${datetime}`);
 
@@ -681,9 +692,12 @@ app.post(
     let { datetime, rating, comment, activities } = req.body;
     const userId = req.user.id;
 
-    // If no datetime is supplied, use today's datetime
+    // If no datetime is supplied, use current EST datetime
     if (!datetime) {
-      datetime = new Date().toISOString();
+      datetime = getCurrentESTDateTime();
+    } else {
+      // Convert provided datetime to EST
+      datetime = convertToEST(datetime);
     }
 
     // Convert activities array to JSON string
@@ -786,7 +800,7 @@ app.post('/forgot-password', strictLimiter, (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(20).toString('hex');
-    const resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    const resetPasswordExpires = DateTime.now().setZone('America/New_York').plus({ hours: 1 }).toMillis();
 
     db.run(
       `UPDATE users SET resetPasswordToken = ?, resetPasswordExpires = ? WHERE id = ?`,

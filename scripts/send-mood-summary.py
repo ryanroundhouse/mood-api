@@ -45,6 +45,11 @@ def get_users():
     conn.close()
     return users
 
+from datetime import datetime, timedelta, timezone
+
+import re
+from datetime import datetime, timedelta
+
 def get_user_moods(user_id, year, month):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -53,12 +58,19 @@ def get_user_moods(user_id, year, month):
     end_date = end_date.replace(day=1)
 
     cursor.execute("""
-        SELECT strftime('%d', datetime) as day, rating, comment, activities
+        SELECT datetime, rating, comment, activities
         FROM moods
         WHERE userId = ? AND datetime >= ? AND datetime < ?
     """, (user_id, start_date.isoformat(), end_date.isoformat()))
     
-    moods = {row[0]: {'rating': row[1], 'comment': row[2], 'activities': json.loads(row[3]) if row[3] else []} for row in cursor.fetchall()}
+    moods = {}
+    for row in cursor.fetchall():
+        # Strip off timezone information
+        dt_str = re.sub(r'(Z|[+-]\d{2}:\d{2})$', '', row[0])
+        dt = datetime.fromisoformat(dt_str)
+        day = dt.strftime('%d')
+        moods[day] = {'rating': row[1], 'comment': row[2], 'activities': json.loads(row[3]) if row[3] else []}
+    
     conn.close()
     return moods
 

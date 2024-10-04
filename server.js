@@ -165,6 +165,28 @@ db.serialize(() => {
       logger.error('Unexpected result from PRAGMA table_info(users)');
     }
   });
+
+  // Modify mood datetime values to add '-04:00' if not present
+  db.all(`SELECT id, datetime FROM moods`, [], (err, rows) => {
+    if (err) {
+      logger.error('Error fetching moods for datetime update:', err);
+      return;
+    }
+
+    rows.forEach(row => {
+      let updatedDatetime = row.datetime;
+      if (!updatedDatetime.endsWith('Z') && !updatedDatetime.match(/[+-]\d{2}:\d{2}$/)) {
+        updatedDatetime += '-04:00';
+        db.run(`UPDATE moods SET datetime = ? WHERE id = ?`, [updatedDatetime, row.id], (updateErr) => {
+          if (updateErr) {
+            logger.error(`Error updating datetime for mood ${row.id}:`, updateErr);
+          } else {
+            logger.info(`Updated datetime for mood ${row.id}: ${updatedDatetime}`);
+          }
+        });
+      }
+    });
+  });
 });
 
 // Set the base URL from environment variable or default to localhost

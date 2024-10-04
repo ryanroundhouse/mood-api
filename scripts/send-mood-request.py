@@ -41,14 +41,17 @@ def get_users_with_notifications():
 
 def user_needs_reminder(user_id):
     conn = sqlite3.connect(DB_PATH)
-    # Register the date adapter
-    sqlite3.register_adapter(datetime, adapt_date)
     cursor = conn.cursor()
+    
+    # Get the current date in EST timezone
     today = datetime.now(EST_TIMEZONE).date()
-    cursor.execute("""
+    
+    # Modify the SQL query to use date functions
+    sql_query = """
         SELECT COUNT(*) FROM moods 
-        WHERE userId = ? AND DATE(datetime) = ?
-    """, (user_id, today))
+        WHERE userId = ? AND DATE(substr(datetime, 1, 10)) = ?
+    """    
+    cursor.execute(sql_query, (user_id, today.isoformat()))
     count = cursor.fetchone()[0]
     conn.close()
     return count == 0
@@ -64,7 +67,7 @@ def generate_auth_code(user_id):
     conn.close()
     return auth_code
 
-def send_email(to_email, auth_code):
+def send_email(to_email, user_id, auth_code):
     subjects = [
         "How did your day go?",
         "Tell us about your day!",
@@ -138,16 +141,16 @@ def send_email(to_email, auth_code):
             }
         )
         response.raise_for_status()
-        print(f"Email sent successfully to {to_email}")
+        print(f"Email sent successfully to user{user_id}")
     except requests.exceptions.RequestException as e:
-        print(f"Failed to send email to {to_email}. Error: {str(e)}")
+        print(f"Failed to send email to user {user_id}. Error: {str(e)}")
 
 def main():
     users = get_users_with_notifications()
     for user_id, email in users:
         if user_needs_reminder(user_id):
             auth_code = generate_auth_code(user_id)
-            send_email(email, auth_code)
+            send_email(email, user_id, auth_code)
         else:
             print(f"User {user_id} has already submitted a mood entry today. Skipping reminder.")
 

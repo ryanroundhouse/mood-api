@@ -15,6 +15,10 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const axios = require('axios'); // Make sure to install axios: npm install axios
 const rateLimit = require('express-rate-limit');
 const { DateTime } = require('luxon'); // Make sure to install luxon: npm install luxon
+const cors = require('cors'); // Make sure to install cors: npm install cors
+
+// Add this near the top of your file, after other imports
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 // Configure winston logger
 const logger = winston.createLogger({
@@ -173,17 +177,29 @@ db.serialize(() => {
       return;
     }
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       let updatedDatetime = row.datetime;
-      if (!updatedDatetime.endsWith('Z') && !updatedDatetime.match(/[+-]\d{2}:\d{2}$/)) {
+      if (
+        !updatedDatetime.endsWith('Z') &&
+        !updatedDatetime.match(/[+-]\d{2}:\d{2}$/)
+      ) {
         updatedDatetime += '-04:00';
-        db.run(`UPDATE moods SET datetime = ? WHERE id = ?`, [updatedDatetime, row.id], (updateErr) => {
-          if (updateErr) {
-            logger.error(`Error updating datetime for mood ${row.id}:`, updateErr);
-          } else {
-            logger.info(`Updated datetime for mood ${row.id}: ${updatedDatetime}`);
+        db.run(
+          `UPDATE moods SET datetime = ? WHERE id = ?`,
+          [updatedDatetime, row.id],
+          (updateErr) => {
+            if (updateErr) {
+              logger.error(
+                `Error updating datetime for mood ${row.id}:`,
+                updateErr
+              );
+            } else {
+              logger.info(
+                `Updated datetime for mood ${row.id}: ${updatedDatetime}`
+              );
+            }
           }
-        });
+        );
       }
     });
   });
@@ -284,6 +300,23 @@ function getCurrentESTDateTime() {
 // Helper function to convert UTC to EST
 function convertToEST(utcDateString) {
   return DateTime.fromISO(utcDateString).setZone('America/New_York').toISO();
+}
+
+// Add this middleware before your routes
+if (isDevelopment) {
+  app.use(cors());
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, DELETE, OPTIONS'
+    );
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    );
+    next();
+  });
 }
 
 // Endpoint to get user settings
@@ -822,7 +855,10 @@ app.post('/api/forgot-password', strictLimiter, (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(20).toString('hex');
-    const resetPasswordExpires = DateTime.now().setZone('America/New_York').plus({ hours: 1 }).toMillis();
+    const resetPasswordExpires = DateTime.now()
+      .setZone('America/New_York')
+      .plus({ hours: 1 })
+      .toMillis();
 
     db.run(
       `UPDATE users SET resetPasswordToken = ?, resetPasswordExpires = ? WHERE id = ?`,

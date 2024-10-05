@@ -153,7 +153,7 @@
             const subject = document.getElementById('subject').value;
             const message = document.getElementById('message').value;
 
-            const response = await fetch('/contact', {
+            const response = await fetch('/api/contact', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

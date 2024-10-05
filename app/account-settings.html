@@ -4,16 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Account Settings - Moodful</title>
-    <meta name="description" content="Manage your Moodful account settings, customize notifications, and upgrade to Pro for advanced features to enhance your mood tracking experience.">
-    <meta name="keywords" content="Moodful, account settings, mood tracking, notifications, custom activities, pro upgrade">
-    <meta name="robots" content="noindex, nofollow">
-    <meta property="og:title" content="Moodful Account Settings">
-    <meta property="og:description" content="Customize your Moodful experience: manage notifications, add custom activities, and upgrade to Pro for advanced mood tracking features.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://moodful.ca/account-settings.html">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Moodful Account Settings">
-    <meta name="twitter:description" content="Customize your Moodful experience: manage notifications, add custom activities, and upgrade to Pro for advanced mood tracking features.">
+    <meta
+      name="description"
+      content="Manage your Moodful account settings, customize notifications, and upgrade to Pro for advanced features to enhance your mood tracking experience."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, account settings, mood tracking, notifications, custom activities, pro upgrade"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta property="og:title" content="Moodful Account Settings" />
+    <meta
+      property="og:description"
+      content="Customize your Moodful experience: manage notifications, add custom activities, and upgrade to Pro for advanced mood tracking features."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://moodful.ca/account-settings.html"
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Moodful Account Settings" />
+    <meta
+      name="twitter:description"
+      content="Customize your Moodful experience: manage notifications, add custom activities, and upgrade to Pro for advanced mood tracking features."
+    />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .settings-container {
@@ -212,7 +227,7 @@
       // Fetch user settings
       async function fetchUserSettings() {
         try {
-          const response = await fetch('/user/settings', {
+          const response = await fetch('/api/user/settings', {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -271,7 +286,7 @@
         const weeklySummary = document.getElementById('weeklySummary').checked;
 
         try {
-          const response = await fetch('/user/settings', {
+          const response = await fetch('/api/user/settings', {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -298,7 +313,7 @@
       // Export mood data
       async function exportMoodData() {
         try {
-          const response = await fetch('/moods', {
+          const response = await fetch('/api/moods', {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -354,7 +369,7 @@
       // Fetch custom activities
       async function fetchCustomActivities() {
         try {
-          const response = await fetch('/user/activities', {
+          const response = await fetch('/api/user/activities', {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -406,7 +421,7 @@
         const newActivity = document.getElementById('newActivity').value.trim();
         if (newActivity) {
           try {
-            const response = await fetch('/user/activities', {
+            const response = await fetch('/api/user/activities', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -436,7 +451,7 @@
         const activities = getCurrentActivities();
         activities.splice(index, 1);
         try {
-          const response = await fetch('/user/activities', {
+          const response = await fetch('/api/user/activities', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -516,7 +531,7 @@
           const paymentMethodId = paymentMethod.id;
 
           try {
-            const response = await fetch('/upgrade', {
+            const response = await fetch('/api/upgrade', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -548,7 +563,7 @@
           );
           if (confirmDowngrade) {
             try {
-              const response = await fetch('/downgrade', {
+              const response = await fetch('/api/downgrade', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',

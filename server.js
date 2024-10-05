@@ -269,12 +269,12 @@ const strictLimiter = rateLimit({
 });
 
 // Apply the strict rate limiter to sensitive routes
-app.use('/register', strictLimiter);
-app.use('/login', strictLimiter);
-app.use('/forgot-password', strictLimiter);
-app.use('/reset-password', strictLimiter);
-app.use('/upgrade', strictLimiter);
-app.use('/downgrade', strictLimiter);
+app.use('/api/register', strictLimiter);
+app.use('/api/login', strictLimiter);
+app.use('/api/forgot-password', strictLimiter);
+app.use('/api/reset-password', strictLimiter);
+app.use('/api/upgrade', strictLimiter);
+app.use('/api/downgrade', strictLimiter);
 
 // Helper function to get current EST datetime
 function getCurrentESTDateTime() {
@@ -287,7 +287,7 @@ function convertToEST(utcDateString) {
 }
 
 // Endpoint to get user settings
-app.get('/user/settings', authenticateToken, (req, res) => {
+app.get('/api/user/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
@@ -322,7 +322,7 @@ app.get('/user/settings', authenticateToken, (req, res) => {
 
 // Endpoint to update user settings
 app.put(
-  '/user/settings',
+  '/api/user/settings',
   authenticateToken,
   [
     body('name').optional().trim().isLength({ min: 1 }),
@@ -388,7 +388,7 @@ app.put(
 
 // mood by auth code
 app.post(
-  '/mood/:authCode',
+  '/api/mood/:authCode',
   [
     body('rating').isInt({ min: 0, max: 5 }),
     body('comment').optional().isString().trim().isLength({ max: 500 }),
@@ -510,7 +510,7 @@ app.post(
 
 // register
 app.post(
-  '/register',
+  '/api/register',
   strictLimiter,
   [
     body('email').isEmail(),
@@ -626,7 +626,7 @@ app.post(
 );
 
 // verify email
-app.get('/verify/:token', (req, res) => {
+app.get('/api/verify/:token', (req, res) => {
   const { token } = req.params;
 
   db.get(
@@ -661,7 +661,7 @@ app.get('/verify/:token', (req, res) => {
 });
 
 // login
-app.post('/login', strictLimiter, (req, res) => {
+app.post('/api/login', strictLimiter, (req, res) => {
   const { email, password } = req.body;
 
   db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user) => {
@@ -696,7 +696,7 @@ app.post('/login', strictLimiter, (req, res) => {
 
 // mood when authenticated
 app.post(
-  '/mood',
+  '/api/mood',
   authenticateToken,
   [
     body('datetime').optional().isISO8601().toDate(),
@@ -789,7 +789,7 @@ app.post(
 );
 
 // get moods
-app.get('/moods', authenticateToken, (req, res) => {
+app.get('/api/moods', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.all(
@@ -808,7 +808,7 @@ app.get('/moods', authenticateToken, (req, res) => {
 });
 
 // New route for forgot password
-app.post('/forgot-password', strictLimiter, (req, res) => {
+app.post('/api/forgot-password', strictLimiter, (req, res) => {
   const { email } = req.body;
 
   db.get(`SELECT * FROM users WHERE email = ?`, [email], (err, user) => {
@@ -849,7 +849,7 @@ app.post('/forgot-password', strictLimiter, (req, res) => {
 });
 
 // New route for password reset
-app.post('/reset-password/:token', strictLimiter, (req, res) => {
+app.post('/api/reset-password/:token', strictLimiter, (req, res) => {
   const { token } = req.params;
   const { password } = req.body;
 
@@ -889,7 +889,7 @@ app.post('/reset-password/:token', strictLimiter, (req, res) => {
 
 // GET endpoint for user activities
 app.get(
-  '/user/activities',
+  '/api/user/activities',
   authenticateToken,
   checkProOrEnterprise,
   (req, res) => {
@@ -913,7 +913,7 @@ app.get(
 
 // POST endpoint for user activities
 app.post(
-  '/user/activities',
+  '/api/user/activities',
   authenticateToken,
   checkProOrEnterprise,
   [
@@ -947,7 +947,7 @@ app.post(
 );
 
 // GET endpoint for user activities using auth code
-app.get('/user/activities/:authCode', (req, res) => {
+app.get('/api/user/activities/:authCode', (req, res) => {
   const { authCode } = req.params;
 
   db.get(
@@ -1016,7 +1016,7 @@ app.get('/user/activities/:authCode', (req, res) => {
 
 // Contact form submission endpoint
 app.post(
-  '/contact',
+  '/api/contact',
   [
     body('name').trim().isLength({ min: 1, max: 100 }).escape(),
     body('email').isEmail().normalizeEmail(),
@@ -1079,39 +1079,45 @@ app.post(
 );
 
 // Endpoint to handle Stripe webhook events
-app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const sig = req.headers['stripe-signature'];
+app.post(
+  '/api/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const sig = req.headers['stripe-signature'];
 
-  let event;
+    let event;
 
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    logger.error('Webhook signature verification failed:', err);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      logger.error('Webhook signature verification failed:', err);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the event
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        const paymentIntent = event.data.object;
+        logger.info(
+          `PaymentIntent for ${paymentIntent.amount} was successful!`
+        );
+        // Handle successful payment here
+        break;
+      // Add more event types as needed
+      default:
+        logger.warn(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
   }
-
-  // Handle the event
-  switch (event.type) {
-    case 'payment_intent.succeeded':
-      const paymentIntent = event.data.object;
-      logger.info(`PaymentIntent for ${paymentIntent.amount} was successful!`);
-      // Handle successful payment here
-      break;
-    // Add more event types as needed
-    default:
-      logger.warn(`Unhandled event type ${event.type}`);
-  }
-
-  res.json({ received: true });
-});
+);
 
 // Endpoint to handle account upgrade
-app.post('/upgrade', authenticateToken, strictLimiter, async (req, res) => {
+app.post('/api/upgrade', authenticateToken, strictLimiter, async (req, res) => {
   const { paymentMethodId } = req.body;
   const userId = req.user.id;
 
@@ -1199,48 +1205,55 @@ app.post('/upgrade', authenticateToken, strictLimiter, async (req, res) => {
 });
 
 // Endpoint to handle account downgrade
-app.post('/downgrade', authenticateToken, strictLimiter, async (req, res) => {
-  const userId = req.user.id;
+app.post(
+  '/api/downgrade',
+  authenticateToken,
+  strictLimiter,
+  async (req, res) => {
+    const userId = req.user.id;
 
-  try {
-    // Fetch user details from the database
-    db.get(
-      `SELECT stripeSubscriptionId FROM users WHERE id = ?`,
-      [userId],
-      async (err, user) => {
-        if (err) {
-          logger.error('Error fetching user details:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-
-        if (!user || !user.stripeSubscriptionId) {
-          return res.status(404).json({ error: 'Subscription not found' });
-        }
-
-        // Cancel the Stripe subscription
-        await stripe.subscriptions.cancel(user.stripeSubscriptionId);
-
-        // Update user account level to 'basic' and remove subscription ID
-        db.run(
-          `UPDATE users SET stripeSubscriptionId = NULL, accountLevel = 'basic' WHERE id = ?`,
-          [userId],
-          (updateErr) => {
-            if (updateErr) {
-              logger.error('Error updating account level:', updateErr);
-              return res.status(500).json({ error: 'Internal server error' });
-            }
-
-            logger.info(`User downgraded to Basic: ${userId}`);
-            res.json({ message: 'Your account has been downgraded to Basic.' });
+    try {
+      // Fetch user details from the database
+      db.get(
+        `SELECT stripeSubscriptionId FROM users WHERE id = ?`,
+        [userId],
+        async (err, user) => {
+          if (err) {
+            logger.error('Error fetching user details:', err);
+            return res.status(500).json({ error: 'Internal server error' });
           }
-        );
-      }
-    );
-  } catch (error) {
-    logger.error('Error during downgrade:', error);
-    res.status(500).json({ error: 'An error occurred. Please try again.' });
+
+          if (!user || !user.stripeSubscriptionId) {
+            return res.status(404).json({ error: 'Subscription not found' });
+          }
+
+          // Cancel the Stripe subscription
+          await stripe.subscriptions.cancel(user.stripeSubscriptionId);
+
+          // Update user account level to 'basic' and remove subscription ID
+          db.run(
+            `UPDATE users SET stripeSubscriptionId = NULL, accountLevel = 'basic' WHERE id = ?`,
+            [userId],
+            (updateErr) => {
+              if (updateErr) {
+                logger.error('Error updating account level:', updateErr);
+                return res.status(500).json({ error: 'Internal server error' });
+              }
+
+              logger.info(`User downgraded to Basic: ${userId}`);
+              res.json({
+                message: 'Your account has been downgraded to Basic.',
+              });
+            }
+          );
+        }
+      );
+    } catch (error) {
+      logger.error('Error during downgrade:', error);
+      res.status(500).json({ error: 'An error occurred. Please try again.' });
+    }
   }
-});
+);
 
 // Serve static files from the 'app' directory
 app.use(express.static(path.join(__dirname, 'app')));

@@ -636,7 +636,7 @@ app.post(
           );
 
           // Send verification email
-          const verificationLink = `${BASE_URL}/verify/${verificationToken}`;
+          const verificationLink = `${BASE_URL}/api/verify/${verificationToken}`;
           transporter.sendMail({
             from: NOREPLY_EMAIL,
             to: email,
@@ -869,7 +869,7 @@ app.post('/api/forgot-password', strictLimiter, (req, res) => {
           return res.status(500).json({ error: 'Internal server error' });
         }
 
-        const resetLink = `${BASE_URL}/reset-password.html?token=${resetToken}`;
+        const resetLink = `${BASE_URL}/api/reset-password.html?token=${resetToken}`;
         transporter.sendMail({
           from: NOREPLY_EMAIL,
           to: email,

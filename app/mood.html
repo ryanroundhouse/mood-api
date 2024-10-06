@@ -153,7 +153,7 @@
       // Update this function to fetch custom activities using the auth code
       async function fetchCustomActivities() {
         try {
-          const response = await fetch(`/user/activities/${authCode}`);
+          const response = await fetch(`/api/user/activities/${authCode}`);
 
           if (response.ok) {
             const data = await response.json();
@@ -235,7 +235,7 @@
           ).map((checkbox) => checkbox.value);
 
           try {
-            const response = await fetch(`/mood/${authCode}`, {
+            const response = await fetch(`/api/mood/${authCode}`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

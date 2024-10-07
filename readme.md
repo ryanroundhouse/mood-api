@@ -116,7 +116,8 @@ Response:
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "1234567890abcdef1234567890abcdef12345678"
 }
 ```
 
@@ -125,6 +126,58 @@ Possible errors:
 - 400: Invalid email or password
 - 400: Please verify your email before logging in
 - 500: Error logging in
+
+### Refresh access token
+
+- **POST** `/api/refresh-token`
+
+Request:
+
+```json
+{
+  "refreshToken": "1234567890abcdef1234567890abcdef12345678"
+}
+```
+
+Response:
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+Possible errors:
+
+- 400: Refresh token is required
+- 401: Invalid or expired refresh token
+- 401: User not found
+- 500: Internal server error
+
+### User logout
+
+- **POST** `/api/logout`
+
+Request:
+
+```json
+{
+  "refreshToken": "1234567890abcdef1234567890abcdef12345678"
+}
+```
+
+Response:
+
+```json
+{
+  "message": "Logged out successfully"
+}
+```
+
+Possible errors:
+
+- 400: Refresh token is required
+- 500: Internal server error
 
 ### Create/update a mood entry
 

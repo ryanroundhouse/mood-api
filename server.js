@@ -16,6 +16,7 @@ const axios = require('axios'); // Make sure to install axios: npm install axios
 const rateLimit = require('express-rate-limit');
 const { DateTime } = require('luxon'); // Make sure to install luxon: npm install luxon
 const cors = require('cors'); // Make sure to install cors: npm install cors
+const { v4: uuidv4 } = require('uuid'); // Make sure to install uuid: npm install uuid
 
 // Add this near the top of your file, after other imports
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -212,6 +213,16 @@ db.serialize(() => {
       }
     });
   });
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      expiresAt INTEGER NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    )
+  `);
 });
 
 // Set the base URL from environment variable or default to localhost
@@ -703,7 +714,7 @@ app.get('/api/verify/:token', (req, res) => {
 });
 
 // login
-app.post('/api/login', strictLimiter, (req, res) => {
+app.post('/api/login', strictLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user) => {
@@ -726,13 +737,28 @@ app.post('/api/login', strictLimiter, (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       { id: user.id, accountLevel: user.accountLevel },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '15m' }
     );
-    logger.info(`User logged in successfully: ${email}`);
-    res.json({ token });
+
+    const refreshToken = uuidv4();
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days from now
+
+    db.run(
+      `INSERT INTO refresh_tokens (userId, token, expiresAt) VALUES (?, ?, ?)`,
+      [user.id, refreshToken, expiresAt],
+      (err) => {
+        if (err) {
+          logger.error('Error storing refresh token:', err);
+          return res.status(500).json({ error: 'Error logging in' });
+        }
+
+        logger.info(`User logged in successfully: ${email}`);
+        res.json({ accessToken, refreshToken });
+      }
+    );
   });
 });
 
@@ -1338,6 +1364,73 @@ app.get('/api/user/summary', authenticateToken, generalLimiter, (req, res) => {
         basicInsights: basicInsights,
         aiInsights: aiInsights,
       });
+    }
+  );
+});
+
+// Add a new endpoint for refreshing tokens
+app.post('/api/refresh-token', async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token is required' });
+  }
+
+  db.get(
+    `SELECT * FROM refresh_tokens WHERE token = ? AND expiresAt > ?`,
+    [refreshToken, Date.now()],
+    async (err, tokenData) => {
+      if (err) {
+        logger.error('Error verifying refresh token:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      if (!tokenData) {
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+
+      db.get(`SELECT * FROM users WHERE id = ?`, [tokenData.userId], (err, user) => {
+        if (err) {
+          logger.error('Error fetching user for refresh token:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (!user) {
+          return res.status(401).json({ error: 'User not found' });
+        }
+
+        const newAccessToken = jwt.sign(
+          { id: user.id, accountLevel: user.accountLevel },
+          JWT_SECRET,
+          { expiresIn: '15m' }
+        );
+
+        logger.info(`Access token refreshed for user: ${user.id}`);
+        res.json({ accessToken: newAccessToken });
+      });
+    }
+  );
+});
+
+// Add a new endpoint for logging out
+app.post('/api/logout', authenticateToken, (req, res) => {
+  const refreshToken = req.body.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token is required' });
+  }
+
+  db.run(
+    `DELETE FROM refresh_tokens WHERE token = ?`,
+    [refreshToken],
+    (err) => {
+      if (err) {
+        logger.error('Error deleting refresh token:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      logger.info(`User logged out successfully: ${req.user.id}`);
+      res.json({ message: 'Logged out successfully' });
     }
   );
 });

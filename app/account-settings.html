@@ -220,19 +220,51 @@
 
     <script>
       // Check if user is logged in
-      const token = localStorage.getItem('token');
-      if (!token) {
+      const accessToken = localStorage.getItem('accessToken');
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!accessToken || !refreshToken) {
         window.location.href = 'login.html';
       }
 
-      // Fetch user settings
+      // Add this function to refresh the access token
+      async function refreshAccessToken() {
+        try {
+          const response = await fetch('/api/refresh-token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('accessToken', data.accessToken);
+            return data.accessToken;
+          } else {
+            throw new Error('Failed to refresh token');
+          }
+        } catch (error) {
+          console.error('Error refreshing token:', error);
+          // Redirect to login page if refresh fails
+          window.location.href = 'login.html';
+        }
+      }
+
+      // Modify the fetchUserSettings function
       async function fetchUserSettings() {
         try {
           const response = await fetch('/api/user/settings', {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return fetchUserSettings(); // Retry with new token
+          }
 
           if (response.ok) {
             const settings = await response.json();
@@ -278,7 +310,7 @@
         }
       }
 
-      // Update user settings
+      // Modify the updateUserSettings function
       async function updateUserSettings(event) {
         event.preventDefault();
         const name = document.getElementById('name').value;
@@ -291,7 +323,7 @@
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
             body: JSON.stringify({
               name,
@@ -299,6 +331,12 @@
               weeklySummary,
             }),
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return updateUserSettings(event); // Retry with new token
+          }
 
           if (response.ok) {
             alert('Settings updated successfully!');
@@ -311,14 +349,20 @@
         }
       }
 
-      // Export mood data
+      // Modify the exportMoodData function
       async function exportMoodData() {
         try {
           const response = await fetch('/api/moods', {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return exportMoodData(); // Retry with new token
+          }
 
           if (response.ok) {
             const moodData = await response.json();
@@ -348,33 +392,45 @@
         }
       }
 
-      // Logout functionality
-      document.getElementById('logoutBtn').addEventListener('click', () => {
-        localStorage.removeItem('token');
-        window.location.href = 'index.html';
+      // Modify the logout functionality
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        try {
+          const response = await fetch('/api/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+
+          if (response.ok) {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = 'index.html';
+          } else {
+            throw new Error('Logout failed');
+          }
+        } catch (error) {
+          console.error('Error logging out:', error);
+          alert('Failed to logout. Please try again.');
+        }
       });
 
-      // Fetch user settings when the page loads
-      fetchUserSettings();
-
-      // Add event listener for form submission
-      document
-        .getElementById('settingsForm')
-        .addEventListener('submit', updateUserSettings);
-
-      // Add event listener for mood data export
-      document
-        .getElementById('exportMoodData')
-        .addEventListener('click', exportMoodData);
-
-      // Fetch custom activities
+      // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
           const response = await fetch('/api/user/activities', {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return fetchCustomActivities(); // Retry with new token
+          }
 
           if (response.ok) {
             const data = await response.json();
@@ -417,7 +473,7 @@
         });
       }
 
-      // Add new activity
+      // Modify the addActivity function
       async function addActivity() {
         const newActivity = document.getElementById('newActivity').value.trim();
         if (newActivity) {
@@ -426,12 +482,18 @@
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${accessToken}`,
               },
               body: JSON.stringify({
                 activities: [...getCurrentActivities(), newActivity],
               }),
             });
+
+            if (response.status === 401) {
+              // Token expired, try to refresh
+              const newAccessToken = await refreshAccessToken();
+              return addActivity(); // Retry with new token
+            }
 
             if (response.ok) {
               const data = await response.json();
@@ -447,7 +509,7 @@
         }
       }
 
-      // Delete activity
+      // Modify the deleteActivity function
       async function deleteActivity(index) {
         const activities = getCurrentActivities();
         activities.splice(index, 1);
@@ -456,10 +518,16 @@
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
             body: JSON.stringify({ activities }),
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return deleteActivity(index); // Retry with new token
+          }
 
           if (response.ok) {
             const data = await response.json();
@@ -509,83 +577,105 @@
         }
       });
 
-      document
-        .getElementById('upgradeButton')
-        .addEventListener('click', async (event) => {
-          event.preventDefault();
+      // Modify the upgrade functionality
+      document.getElementById('upgradeButton').addEventListener('click', async (event) => {
+        event.preventDefault();
 
-          const { paymentMethod, error } = await stripe.createPaymentMethod({
-            type: 'card',
-            card: card,
-            billing_details: {
-              name: window.userDetails.name,
-              email: window.userDetails.email,
+        const { paymentMethod, error } = await stripe.createPaymentMethod({
+          type: 'card',
+          card: card,
+          billing_details: {
+            name: window.userDetails.name,
+            email: window.userDetails.email,
+          },
+        });
+
+        if (error) {
+          const errorElement = document.getElementById('card-errors');
+          errorElement.textContent = error.message;
+          return;
+        }
+
+        const paymentMethodId = paymentMethod.id;
+
+        try {
+          const response = await fetch('/api/upgrade', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
             },
+            body: JSON.stringify({ paymentMethodId }),
           });
 
-          if (error) {
-            const errorElement = document.getElementById('card-errors');
-            errorElement.textContent = error.message;
-            return;
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            // Retry upgrade with new token
+            return document.getElementById('upgradeButton').click();
           }
 
-          const paymentMethodId = paymentMethod.id;
+          if (response.ok) {
+            alert('Your account has been upgraded to Pro!');
+            // Optionally, you can redirect the user or update the UI to reflect the new account status
+          } else {
+            const errorData = await response.json();
+            alert('Error: ' + errorData.error);
+          }
+        } catch (error) {
+          console.error('Error during upgrade:', error);
+          alert('An error occurred. Please try again.');
+        }
+      });
 
+      // Modify the downgrade functionality
+      document.getElementById('downgradeButton').addEventListener('click', async (event) => {
+        event.preventDefault();
+        const confirmDowngrade = confirm('Are you sure you want to cancel your subscription?');
+        if (confirmDowngrade) {
           try {
-            const response = await fetch('/api/upgrade', {
+            const response = await fetch('/api/downgrade', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${accessToken}`,
               },
-              body: JSON.stringify({ paymentMethodId }),
             });
 
+            if (response.status === 401) {
+              // Token expired, try to refresh
+              const newAccessToken = await refreshAccessToken();
+              // Retry downgrade with new token
+              return document.getElementById('downgradeButton').click();
+            }
+
             if (response.ok) {
-              alert('Your account has been upgraded to Pro!');
+              alert('Your account has been downgraded.');
               // Optionally, you can redirect the user or update the UI to reflect the new account status
+              window.location.reload();
             } else {
               const errorData = await response.json();
               alert('Error: ' + errorData.error);
             }
           } catch (error) {
-            console.error('Error during upgrade:', error);
+            console.error('Error during downgrade:', error);
             alert('An error occurred. Please try again.');
           }
-        });
+        }
+      });
 
-      // Downgrade functionality
+      // Fetch user settings when the page loads
+      fetchUserSettings();
+
+      // Add event listener for form submission
       document
-        .getElementById('downgradeButton')
-        .addEventListener('click', async (event) => {
-          event.preventDefault();
-          const confirmDowngrade = confirm(
-            'Are you sure you want to cancel your subscription?'
-          );
-          if (confirmDowngrade) {
-            try {
-              const response = await fetch('/api/downgrade', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-              });
+        .getElementById('settingsForm')
+        .addEventListener('submit', updateUserSettings);
 
-              if (response.ok) {
-                alert('Your account has been downgraded.');
-                // Optionally, you can redirect the user or update the UI to reflect the new account status
-                window.location.reload();
-              } else {
-                const errorData = await response.json();
-                alert('Error: ' + errorData.error);
-              }
-            } catch (error) {
-              console.error('Error during downgrade:', error);
-              alert('An error occurred. Please try again.');
-            }
-          }
-        });
+      // Add event listener for mood data export
+      document
+        .getElementById('exportMoodData')
+        .addEventListener('click', exportMoodData);
     </script>
   </body>
 </html>

@@ -112,25 +112,76 @@
 
     <script>
       // Check if user is logged in
-      const token = localStorage.getItem('token');
-      if (!token) {
+      const accessToken = localStorage.getItem('accessToken');
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!accessToken || !refreshToken) {
         window.location.href = 'login.html';
       }
 
-      // Logout functionality
-      document.getElementById('logoutBtn').addEventListener('click', () => {
-        localStorage.removeItem('token');
-        window.location.href = 'index.html';
+      // Add this function to refresh the access token
+      async function refreshAccessToken() {
+        try {
+          const response = await fetch('/api/refresh-token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('accessToken', data.accessToken);
+            return data.accessToken;
+          } else {
+            throw new Error('Failed to refresh token');
+          }
+        } catch (error) {
+          console.error('Error refreshing token:', error);
+          // Redirect to login page if refresh fails
+          window.location.href = 'login.html';
+        }
+      }
+
+      // Modify the logout functionality
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        try {
+          const response = await fetch('/api/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+
+          if (response.ok) {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = 'index.html';
+          } else {
+            throw new Error('Logout failed');
+          }
+        } catch (error) {
+          console.error('Error logging out:', error);
+          alert('Failed to logout. Please try again.');
+        }
       });
 
-      // Function to fetch and display weekly summary
+      // Modify the fetchWeeklySummary function
       async function fetchWeeklySummary() {
         try {
           const response = await fetch('/api/user/summary', {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${accessToken}`,
             },
           });
+
+          if (response.status === 401) {
+            // Token expired, try to refresh
+            const newAccessToken = await refreshAccessToken();
+            return fetchWeeklySummary(); // Retry with new token
+          }
 
           if (response.status === 404) {
             displayNoSummaryMessage();

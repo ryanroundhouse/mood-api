@@ -92,11 +92,19 @@
 
     <script src="script.js"></script>
     <script>
-      // Check if user is logged in and redirect before loading the page
+      // Check if user is logged in
       (function () {
-        const token = localStorage.getItem('token');
-        if (token) {
-          window.location.replace('dashboard.html');
+        const accessToken = localStorage.getItem('accessToken');
+        const refreshToken = localStorage.getItem('refreshToken');
+        
+        // If we have both tokens, update the UI to show logged-in state
+        if (accessToken && refreshToken) {
+          // For example, change the "Login" button to "Dashboard"
+          const loginButton = document.querySelector('a[href="login.html"]');
+          if (loginButton) {
+            loginButton.href = 'dashboard.html';
+            loginButton.textContent = 'Dashboard';
+          }
         }
       })();
     </script>

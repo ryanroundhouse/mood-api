@@ -397,6 +397,44 @@ Possible errors:
 - 404: Subscription not found
 - 500: An error occurred. Please try again.
 
+### Get user's weekly summary
+
+- **GET** `/api/user/summary`
+
+Response:
+
+```json
+{
+  "basicInsights": [
+    {
+      "name": "Physical Activity Benefits",
+      "description": "Engaging in physical activities increased your mood to an average of 3.00."
+    },
+    {
+      "name": "Family Time Impact",
+      "description": "Spending time with family increased your mood to an average of 4.00."
+    }
+    // More basic insight objects...
+  ],
+  "aiInsights": [
+    {
+      "name": "Mood Insights",
+      "description": "Your mood ratings align well with activities and comments. Work stress may be influencing your constant mood rating of 3."
+    },
+    {
+      "name": "Trends and Correlations",
+      "description": "Consistent mood rating of 3, regardless of events. Work environment significantly influences mood."
+    }
+    // More AI-generated insight objects...
+  ]
+}
+```
+
+Possible errors:
+
+- 404: Summary not found
+- 500: Internal server error
+
 ## Security
 
 - Passwords are hashed using bcrypt

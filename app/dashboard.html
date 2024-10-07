@@ -309,7 +309,9 @@
 
           if (response.ok) {
             const data = await response.json();
-            return data.activities;
+            return data.activities.length > 0
+              ? data.activities
+              : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
           } else if (response.status === 403) {
             // User doesn't have pro or enterprise account
             return null;

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weekly Summary - Moodful | Track and Analyze Your Mood</title>
+    <meta
+      name="description"
+      content="View your weekly mood summary and insights with Moodful. Understand your emotional patterns and get AI-generated insights."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, mood tracking, weekly summary, emotional well-being, mood analysis, mental health"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta
+      property="og:title"
+      content="Moodful Weekly Summary - Your Mood Insights"
+    />
+    <meta
+      property="og:description"
+      content="View your weekly mood summary and get AI-generated insights with Moodful."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://moodful.ca/weekly-summary.html" />
+    <meta name="twitter:card" content="summary" />
+    <meta
+      name="twitter:title"
+      content="Moodful Weekly Summary - Your Mood Insights"
+    />
+    <meta
+      name="twitter:description"
+      content="View your weekly mood summary and get AI-generated insights with Moodful."
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .summary-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .summary-section {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      h2 {
+        color: #333;
+        border-bottom: 2px solid #6a89cc;
+        padding-bottom: 10px;
+      }
+      .insight-item {
+        margin-bottom: 15px;
+      }
+      .insight-item h3 {
+        color: #6a89cc;
+      }
+      .pro-feature-message {
+        background-color: #f0f8ff;
+        border: 1px solid #6a89cc;
+        border-radius: 5px;
+        padding: 15px;
+        margin-top: 10px;
+      }
+      .pro-feature-message p {
+        margin-bottom: 10px;
+      }
+      .pro-feature-message a {
+        color: #6a89cc;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .pro-feature-message a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="index.html"><div class="logo">Moodful</div></a>
+      <nav>
+        <ul>
+          <li><a href="dashboard.html">Dashboard</a></li>
+          <li><a href="weekly-summary.html">Weekly Summary</a></li>
+          <li><a href="account-settings.html">Account Settings</a></li>
+          <li><a href="#" id="logoutBtn">Logout</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section class="hero dashboard-hero">
+      <h1>Weekly Mood Summary</h1>
+      <p>Gain insights into your emotional well-being over the past week.</p>
+    </section>
+
+    <div class="summary-container">
+      <section class="summary-section">
+        <h2>Basic Insights</h2>
+        <div id="basicInsights">
+          <!-- Basic insights will be populated here -->
+        </div>
+      </section>
+
+      <section class="summary-section" id="aiInsightsSection">
+        <h2>AI-Generated Insights</h2>
+        <div id="aiInsights">
+          <!-- AI-generated insights will be populated here -->
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // Check if user is logged in
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = 'login.html';
+      }
+
+      // Logout functionality
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        window.location.href = 'index.html';
+      });
+
+      // Function to fetch and display weekly summary
+      async function fetchWeeklySummary() {
+        try {
+          const response = await fetch('/api/user/summary', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.status === 404) {
+            displayNoSummaryMessage();
+          } else if (response.ok) {
+            const data = await response.json();
+            displayBasicInsights(data.basicInsights);
+            if (data.aiInsights && data.aiInsights.length > 0) {
+              displayAIInsights(data.aiInsights);
+            } else {
+              displayProFeatureMessage();
+            }
+          } else {
+            throw new Error('Failed to fetch weekly summary');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Failed to fetch weekly summary. Please try again.');
+        }
+      }
+
+      function displayNoSummaryMessage() {
+        const summaryContainer = document.querySelector('.summary-container');
+        summaryContainer.innerHTML = `
+          <div class="summary-section">
+            <h2>No Summary Available Yet</h2>
+            <p>We're working on generating your weekly mood summary. Summaries are updated every week, so please check back soon!</p>
+            <p>In the meantime, keep tracking your moods. The more data you provide, the more insightful your summaries will be.</p>
+            <p>Remember, your emotional well-being matters, and we're here to support you on your journey!</p>
+          </div>
+        `;
+      }
+
+      function displayBasicInsights(insights) {
+        const basicInsightsContainer = document.getElementById('basicInsights');
+        basicInsightsContainer.innerHTML = '';
+
+        insights.forEach((insight) => {
+          const insightElement = document.createElement('div');
+          insightElement.classList.add('insight-item');
+          insightElement.innerHTML = `
+                    <h3>${insight.name}</h3>
+                    <p>${insight.description}</p>
+                `;
+          basicInsightsContainer.appendChild(insightElement);
+        });
+      }
+
+      function displayAIInsights(insights) {
+        const aiInsightsContainer = document.getElementById('aiInsights');
+        aiInsightsContainer.innerHTML = '';
+
+        insights.forEach((insight) => {
+          const insightElement = document.createElement('div');
+          insightElement.classList.add('insight-item');
+          insightElement.innerHTML = `
+                    <h3>${insight.name}</h3>
+                    <p>${insight.description}</p>
+                `;
+          aiInsightsContainer.appendChild(insightElement);
+        });
+      }
+
+      function displayProFeatureMessage() {
+        const aiInsightsSection = document.getElementById('aiInsightsSection');
+        aiInsightsSection.innerHTML = `
+          <h2>AI-Generated Insights</h2>
+          <div class="pro-feature-message">
+            <p>AI-generated insights are a Pro-level feature. Upgrade your account to access personalized AI insights about your mood patterns and trends.</p>
+            <p>Visit the <a href="account-settings.html">Account Settings</a> page to upgrade your account and unlock this powerful feature!</p>
+          </div>
+        `;
+      }
+
+      // Fetch weekly summary when the page loads
+      fetchWeeklySummary();
+    </script>
+  </body>
+</html>

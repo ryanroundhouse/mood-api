@@ -131,9 +131,17 @@ def generate_calendar_html(year, month, moods):
     
     return html
 
-def send_email(to_email, calendar_html, basic_stats, openai_insights):
-    subject = "Your Monthly Mood Calendar"
+def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date, end_date):
+    subject = "Moodful - Your Weekly Mood Summary"
     
+    # Generate the email body
+    email_body = f"""
+    <p>Here's some mood statistics for the period from {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}:</p>
+    """
+
+    for i, stat in enumerate(basic_stats, start=1):
+        email_body += f"<p>{i}. **{stat['name']}**: {stat['description']}\n\n</p>"
+
     html_content = f"""
     <html lang="en">
     <head>
@@ -143,7 +151,7 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights):
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #6a89cc;">Basic Analytics</h2>
-        {basic_stats}
+        {email_body}
         <h2 style="color: #6a89cc;">Your Monthly Mood Calendar</h2>
         <p>Here's a summary of your mood entries for this month:</p>
         {calendar_html}
@@ -152,15 +160,12 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights):
     if openai_insights:
         html_content += f"""
         <h2 style="color: #6a89cc;">AI-Generated Insights</h2>
-        <h3>Mood Insights</h3>
-        <p>{openai_insights['Answer1']}</p>
-        <h3>Trends and Correlations</h3>
-        <p>{openai_insights['Answer2']}</p>
-        <h3>Small Win of the Week</h3>
-        <p>{openai_insights['Answer3']}</p>
-        <h3>Mood Prediction</h3>
-        <p>{openai_insights['Answer4']}</p>
         """
+        for insight in openai_insights:
+            html_content += f"""
+            <h3>{insight['name']}</h3>
+            <p>{insight['description']}</p>
+            """
 
     html_content += """
         <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work and have a wonderful week ahead!</p>
@@ -377,54 +382,41 @@ def generate_mood_summary(user_id, start_date, end_date):
     most_detailed_day = most_detailed_entry['datetime'].strftime('%A, %B %d, %Y')
     most_detailed_comment = most_detailed_entry['comment']
 
-    # Now, select 4 random statistics
-    statistics = []
+    # Now, create a list of dictionaries with name-description pairs
+    statistics = [
+        {'name': 'Average Mood Rating', 'description': f'Your average mood rating this week was {average_mood:.2f}.'},
+        {'name': 'Highest Mood Day', 'description': f'On {highest_mood_day}, you had your highest mood rating of {highest_mood_rating}. You mentioned: "{highest_mood_comment}"'},
+    ]
 
-    def add_statistic(name, description):
-        statistics.append({'name': name, 'description': description})
-
-    # Adding statistics
-    add_statistic('Average Mood Rating', f'Your average mood rating this week was {average_mood:.2f}.')
-    add_statistic('Highest Mood Day', f'On {highest_mood_day}, you had your highest mood rating of {highest_mood_rating}. You mentioned: "{highest_mood_comment}"')
     if mood_improvement is not None:
-        add_statistic('Mood Improvement', f'Your mood changed by {mood_improvement:.1f}% compared to the previous week.')
+        statistics.append({'name': 'Mood Improvement', 'description': f'Your mood changed by {mood_improvement:.1f}% compared to the previous week.'})
+    
     if most_enjoyed_activity:
-        add_statistic('Most Enjoyed Activity', f'You most frequently engaged in "{most_enjoyed_activity}" this week.')
+        statistics.append({'name': 'Most Enjoyed Activity', 'description': f'You most frequently engaged in "{most_enjoyed_activity}" this week.'})
     if boosting_activities:
-        add_statistic('Activities Boosting Mood', f'Activities like {", ".join(boosting_activities)} are associated with higher mood ratings.')
-    add_statistic('Positive Words Count', f'You used {positive_word_count} positive words in your journal entries this week.')
+        statistics.append({'name': 'Activities Boosting Mood', 'description': f'Activities like {", ".join(boosting_activities)} are associated with higher mood ratings.'})
+    statistics.append({'name': 'Positive Words Count', 'description': f'You used {positive_word_count} positive words in your journal entries this week.'})
     if avg_sleep_mood is not None:
-        add_statistic('Sleep and Mood Correlation', f'When you had good sleep, your average mood was {avg_sleep_mood:.2f}.')
+        statistics.append({'name': 'Sleep and Mood Correlation', 'description': f'When you had good sleep, your average mood was {avg_sleep_mood:.2f}.'})
     if avg_physical_mood is not None:
-        add_statistic('Physical Activity Benefits', f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.')
+        statistics.append({'name': 'Physical Activity Benefits', 'description': f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.'})
     if consistency_percentage is not None:
-        add_statistic('Consistency in Tracking', f'You logged your mood on {days_logged} out of {total_days} days ({consistency_percentage:.1f}% consistency).')
+        statistics.append({'name': 'Consistency in Tracking', 'description': f'You logged your mood on {days_logged} out of {total_days} days ({consistency_percentage:.1f}% consistency).'})
     if avg_weekday_mood is not None and avg_weekend_mood is not None:
-        add_statistic('Weekend vs. Weekday Mood', f'Your average weekend mood was {avg_weekend_mood:.2f} compared to {avg_weekday_mood:.2f} on weekdays.')
+        statistics.append({'name': 'Weekend vs. Weekday Mood', 'description': f'Your average weekend mood was {avg_weekend_mood:.2f} compared to {avg_weekday_mood:.2f} on weekdays.'})
     if avg_early_riser_mood is not None:
-        add_statistic('Early Riser Effect', f'On days you woke up early, your average mood was {avg_early_riser_mood:.2f}.')
+        statistics.append({'name': 'Early Riser Effect', 'description': f'On days you woke up early, your average mood was {avg_early_riser_mood:.2f}.'})
     if avg_work_mood is not None:
-        add_statistic('Work Satisfaction Influence', f'Work-related activities correlated with an average mood of {avg_work_mood:.2f}.')
+        statistics.append({'name': 'Work Satisfaction Influence', 'description': f'Work-related activities correlated with an average mood of {avg_work_mood:.2f}.'})
     if avg_family_mood is not None:
-        add_statistic('Family Time Impact', f'Spending time with family increased your mood to an average of {avg_family_mood:.2f}.')
+        statistics.append({'name': 'Family Time Impact', 'description': f'Spending time with family increased your mood to an average of {avg_family_mood:.2f}.'})
     if avg_progress_mood is not None:
-        add_statistic('Progress Towards Goals', f'Making progress on your goals raised your mood to an average of {avg_progress_mood:.2f}.')
-    add_statistic('Positive Outlook Percentage', f'{positive_percentage:.1f}% of your days had a mood rating of 3 or higher.')
-    add_statistic('Most Detailed Journal Entry', f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"')
-
-    # Select 4 random statistics
+        statistics.append({'name': 'Progress Towards Goals', 'description': f'Making progress on your goals raised your mood to an average of {avg_progress_mood:.2f}.'})
+    statistics.append({'name': 'Positive Outlook Percentage', 'description': f'{positive_percentage:.1f}% of your days had a mood rating of 3 or higher.'})
+    statistics.append({'name': 'Most Detailed Journal Entry', 'description': f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"'})
+    
     random_statistics = random.sample(statistics, min(4, len(statistics)))
-
-    # Generate the email body
-    email_body = """
-    <p>Here's some mood statistics for the period from {start} to {end}:</p>
-
-    """.format(start=start_date.strftime('%B %d, %Y'), end=end_date.strftime('%B %d, %Y'))
-
-    for i, stat in enumerate(random_statistics, start=1):
-        email_body += f"<p>{i}. **{stat['name']}**: {stat['description']}\n\n</p>"
-
-    return email_body
+    return random_statistics
 
 def get_openai_insights(moods):
     prompt = """
@@ -452,7 +444,13 @@ def get_openai_insights(moods):
         ]
     )
 
-    return json.loads(response.choices[0].message.content)
+    content = json.loads(response.choices[0].message.content)
+    return [
+        {"name": "Mood Insights", "description": content["Answer1"]},
+        {"name": "Trends and Correlations", "description": content["Answer2"]},
+        {"name": "Small Win of the Week", "description": content["Answer3"]},
+        {"name": "Mood Prediction", "description": content["Answer4"]}
+    ]
 
 def main():
     users = get_users()
@@ -471,7 +469,23 @@ def main():
         else:
             openai_insights = None
         
-        send_email(email, calendar_html, basic_stats, openai_insights)
+        # Store the summary data in the database
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Convert basic_stats and openai_insights to JSON strings
+        basic_stats_json = json.dumps(basic_stats)
+        advanced_insights = json.dumps(openai_insights) if openai_insights else None
+        
+        # Insert or update the summaries table
+        cursor.execute("""
+            INSERT OR REPLACE INTO summaries (id, basic, advanced)
+            VALUES (?, ?, ?)
+        """, (user_id, basic_stats_json, advanced_insights))
+        conn.commit()
+        conn.close()
+        
+        send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
 
 if __name__ == "__main__":
     main()

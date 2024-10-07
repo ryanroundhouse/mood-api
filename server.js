@@ -140,6 +140,15 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS summaries (
+      id INTEGER PRIMARY KEY,
+      basic TEXT,
+      advanced TEXT,
+      FOREIGN KEY (id) REFERENCES users(id)
+    )
+  `);
+
   // Add columns to users table if they don't exist
   db.all(`PRAGMA table_info(users)`, (err, rows) => {
     if (err) {
@@ -1290,6 +1299,48 @@ app.post(
     }
   }
 );
+
+// New endpoint to get user's summary
+app.get('/api/user/summary', authenticateToken, generalLimiter, (req, res) => {
+  const userId = req.user.id;
+
+  db.get(
+    `SELECT basic, advanced FROM summaries WHERE id = ?`,
+    [userId],
+    (err, row) => {
+      if (err) {
+        logger.error('Error fetching user summary:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      if (!row) {
+        return res.status(404).json({ error: 'Summary not found' });
+      }
+
+      let basicInsights, aiInsights;
+
+      try {
+        basicInsights = JSON.parse(row.basic);
+      } catch (error) {
+        logger.error('Error parsing basic insights:', error);
+        basicInsights = [];
+      }
+
+      try {
+        aiInsights = JSON.parse(row.advanced);
+      } catch (error) {
+        logger.error('Error parsing AI insights:', error);
+        aiInsights = [];
+      }
+
+      logger.info(`Summary fetched for user: ${userId}`);
+      res.json({
+        basicInsights: basicInsights,
+        aiInsights: aiInsights,
+      });
+    }
+  );
+});
 
 // Serve static files from the 'app' directory
 app.use(express.static(path.join(__dirname, 'app')));

@@ -218,7 +218,9 @@
       </div>
     </section>
 
-    <script>
+    <script type="module">
+      import { makeApiCall } from './api-script.js';
+
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
       const refreshToken = localStorage.getItem('refreshToken');
@@ -226,83 +228,41 @@
         window.location.href = 'login.html';
       }
 
-      // Add this function to refresh the access token
-      async function refreshAccessToken() {
-        try {
-          const response = await fetch('/api/refresh-token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ refreshToken }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            localStorage.setItem('accessToken', data.accessToken);
-            return data.accessToken;
-          } else {
-            throw new Error('Failed to refresh token');
-          }
-        } catch (error) {
-          console.error('Error refreshing token:', error);
-          // Redirect to login page if refresh fails
-          window.location.href = 'login.html';
-        }
-      }
+      // Remove the refreshAccessToken function as it's now handled by makeApiCall
 
       // Modify the fetchUserSettings function
       async function fetchUserSettings() {
         try {
-          const response = await fetch('/api/user/settings', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          const settings = await makeApiCall('/api/user/settings', 'GET');
+          document.getElementById('name').value = settings.name;
+          document.getElementById('dailyNotifications').checked =
+            settings.dailyNotifications;
+          document.getElementById('weeklySummary').checked =
+            settings.weeklySummary;
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return fetchUserSettings(); // Retry with new token
-          }
+          // Store user details for later use
+          window.userDetails = {
+            name: settings.name,
+            email: settings.email,
+          };
 
-          if (response.ok) {
-            const settings = await response.json();
-            document.getElementById('name').value = settings.name;
-            document.getElementById('dailyNotifications').checked =
-              settings.dailyNotifications;
-            document.getElementById('weeklySummary').checked =
-              settings.weeklySummary;
-
-            // Store user details for later use
-            window.userDetails = {
-              name: settings.name,
-              email: settings.email,
-            };
-
-            // Check user's account level and show appropriate sections
-            const accountLevel = settings.accountLevel;
-            console.log(`User account level: ${accountLevel}`);
-            if (accountLevel === 'pro' || accountLevel === 'enterprise') {
-              document.getElementById('exportContainer').style.display =
-                'block';
-              document.getElementById(
-                'customActivitiesContainer'
-              ).style.display = 'block';
-              document.getElementById('upgradeSection').style.display = 'none';
-              document.getElementById('downgradeSection').style.display =
-                'block';
-              fetchCustomActivities();
-              console.log(
-                'Export button and custom activities displayed for pro/enterprise user'
-              );
-            } else {
-              console.log(
-                'Export button and custom activities not displayed for basic user'
-              );
-            }
+          // Check user's account level and show appropriate sections
+          const accountLevel = settings.accountLevel;
+          console.log(`User account level: ${accountLevel}`);
+          if (accountLevel === 'pro' || accountLevel === 'enterprise') {
+            document.getElementById('exportContainer').style.display = 'block';
+            document.getElementById('customActivitiesContainer').style.display =
+              'block';
+            document.getElementById('upgradeSection').style.display = 'none';
+            document.getElementById('downgradeSection').style.display = 'block';
+            fetchCustomActivities();
+            console.log(
+              'Export button and custom activities displayed for pro/enterprise user'
+            );
           } else {
-            throw new Error('Failed to fetch user settings');
+            console.log(
+              'Export button and custom activities not displayed for basic user'
+            );
           }
         } catch (error) {
           console.error('Error:', error);
@@ -319,30 +279,12 @@
         const weeklySummary = document.getElementById('weeklySummary').checked;
 
         try {
-          const response = await fetch('/api/user/settings', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({
-              name,
-              dailyNotifications,
-              weeklySummary,
-            }),
+          await makeApiCall('/api/user/settings', 'PUT', {
+            name,
+            dailyNotifications,
+            weeklySummary,
           });
-
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return updateUserSettings(event); // Retry with new token
-          }
-
-          if (response.ok) {
-            alert('Settings updated successfully!');
-          } else {
-            throw new Error('Failed to update user settings');
-          }
+          alert('Settings updated successfully!');
         } catch (error) {
           console.error('Error:', error);
           alert('Failed to update user settings. Please try again.');
@@ -352,40 +294,22 @@
       // Modify the exportMoodData function
       async function exportMoodData() {
         try {
-          const response = await fetch('/api/moods', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          const moodData = await makeApiCall('/api/moods', 'GET');
+          console.log('Mood data:', moodData);
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return exportMoodData(); // Retry with new token
-          }
+          // Remove userId from each mood entry
+          const sanitizedMoodData = moodData.map(({ userId, ...rest }) => rest);
 
-          if (response.ok) {
-            const moodData = await response.json();
-            console.log('Mood data:', moodData);
+          const dataStr = JSON.stringify(sanitizedMoodData, null, 2);
+          const dataUri =
+            'data:application/json;charset=utf-8,' +
+            encodeURIComponent(dataStr);
 
-            // Remove userId from each mood entry
-            const sanitizedMoodData = moodData.map(
-              ({ userId, ...rest }) => rest
-            );
-
-            const dataStr = JSON.stringify(sanitizedMoodData, null, 2);
-            const dataUri =
-              'data:application/json;charset=utf-8,' +
-              encodeURIComponent(dataStr);
-
-            const exportFileDefaultName = 'mood_data.json';
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            linkElement.click();
-          } else {
-            throw new Error('Failed to export mood data');
-          }
+          const exportFileDefaultName = 'mood_data.json';
+          const linkElement = document.createElement('a');
+          linkElement.setAttribute('href', dataUri);
+          linkElement.setAttribute('download', exportFileDefaultName);
+          linkElement.click();
         } catch (error) {
           console.error('Error:', error);
           alert('Failed to export mood data. Please try again.');
@@ -397,15 +321,7 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            const response = await fetch('/api/logout', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({ refreshToken }),
-            });
-
+            await makeApiCall('/api/logout', 'POST', { refreshToken });
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';
@@ -418,36 +334,20 @@
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
-          const response = await fetch('/api/user/activities', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          const data = await makeApiCall('/api/user/activities', 'GET');
+          let activities = data.activities;
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return fetchCustomActivities(); // Retry with new token
+          if (activities.length === 0) {
+            activities = [
+              'good sleep',
+              'worked out',
+              'sports',
+              'social',
+              'rested',
+            ];
           }
 
-          if (response.ok) {
-            const data = await response.json();
-            let activities = data.activities;
-
-            if (activities.length === 0) {
-              activities = [
-                'good sleep',
-                'worked out',
-                'sports',
-                'social',
-                'rested',
-              ];
-            }
-
-            updateActivitiesList(activities);
-          } else {
-            throw new Error('Failed to fetch custom activities');
-          }
+          updateActivitiesList(activities);
         } catch (error) {
           console.error('Error:', error);
           alert('Failed to fetch custom activities. Please try again.');
@@ -476,30 +376,11 @@
         const newActivity = document.getElementById('newActivity').value.trim();
         if (newActivity) {
           try {
-            const response = await fetch('/api/user/activities', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({
-                activities: [...getCurrentActivities(), newActivity],
-              }),
+            const data = await makeApiCall('/api/user/activities', 'POST', {
+              activities: [...getCurrentActivities(), newActivity],
             });
-
-            if (response.status === 401) {
-              // Token expired, try to refresh
-              const newAccessToken = await refreshAccessToken();
-              return addActivity(); // Retry with new token
-            }
-
-            if (response.ok) {
-              const data = await response.json();
-              updateActivitiesList(data.activities);
-              document.getElementById('newActivity').value = '';
-            } else {
-              throw new Error('Failed to add activity');
-            }
+            updateActivitiesList(data.activities);
+            document.getElementById('newActivity').value = '';
           } catch (error) {
             console.error('Error:', error);
             alert('Failed to add activity. Please try again.');
@@ -512,27 +393,10 @@
         const activities = getCurrentActivities();
         activities.splice(index, 1);
         try {
-          const response = await fetch('/api/user/activities', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({ activities }),
+          const data = await makeApiCall('/api/user/activities', 'POST', {
+            activities,
           });
-
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return deleteActivity(index); // Retry with new token
-          }
-
-          if (response.ok) {
-            const data = await response.json();
-            updateActivitiesList(data.activities);
-          } else {
-            throw new Error('Failed to delete activity');
-          }
+          updateActivitiesList(data.activities);
         } catch (error) {
           console.error('Error:', error);
           alert('Failed to delete activity. Please try again.');
@@ -599,29 +463,11 @@
           const paymentMethodId = paymentMethod.id;
 
           try {
-            const response = await fetch('/api/upgrade', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({ paymentMethodId }),
+            const response = await makeApiCall('/api/upgrade', 'POST', {
+              paymentMethodId,
             });
-
-            if (response.status === 401) {
-              // Token expired, try to refresh
-              const newAccessToken = await refreshAccessToken();
-              // Retry upgrade with new token
-              return document.getElementById('upgradeButton').click();
-            }
-
-            if (response.ok) {
-              alert('Your account has been upgraded to Pro!');
-              // Optionally, you can redirect the user or update the UI to reflect the new account status
-            } else {
-              const errorData = await response.json();
-              alert('Error: ' + errorData.error);
-            }
+            alert('Your account has been upgraded to Pro!');
+            // Optionally, you can redirect the user or update the UI to reflect the new account status
           } catch (error) {
             console.error('Error during upgrade:', error);
             alert('An error occurred. Please try again.');
@@ -638,29 +484,10 @@
           );
           if (confirmDowngrade) {
             try {
-              const response = await fetch('/api/downgrade', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${accessToken}`,
-                },
-              });
-
-              if (response.status === 401) {
-                // Token expired, try to refresh
-                const newAccessToken = await refreshAccessToken();
-                // Retry downgrade with new token
-                return document.getElementById('downgradeButton').click();
-              }
-
-              if (response.ok) {
-                alert('Your account has been downgraded.');
-                // Optionally, you can redirect the user or update the UI to reflect the new account status
-                window.location.reload();
-              } else {
-                const errorData = await response.json();
-                alert('Error: ' + errorData.error);
-              }
+              await makeApiCall('/api/downgrade', 'POST');
+              alert('Your account has been downgraded.');
+              // Optionally, you can redirect the user or update the UI to reflect the new account status
+              window.location.reload();
             } catch (error) {
               console.error('Error during downgrade:', error);
               alert('An error occurred. Please try again.');

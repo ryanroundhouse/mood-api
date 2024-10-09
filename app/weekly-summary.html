@@ -110,7 +110,9 @@
       </section>
     </div>
 
-    <script>
+    <script type="module">
+      import { makeApiCall } from './api-script.js';
+
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
       const refreshToken = localStorage.getItem('refreshToken');
@@ -118,44 +120,12 @@
         window.location.href = 'login.html';
       }
 
-      // Add this function to refresh the access token
-      async function refreshAccessToken() {
-        try {
-          const response = await fetch('/api/refresh-token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ refreshToken }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            localStorage.setItem('accessToken', data.accessToken);
-            return data.accessToken;
-          } else {
-            throw new Error('Failed to refresh token');
-          }
-        } catch (error) {
-          console.error('Error refreshing token:', error);
-          // Redirect to login page if refresh fails
-          window.location.href = 'login.html';
-        }
-      }
-
       // Modify the logout functionality
       document
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            const response = await fetch('/api/logout', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({ refreshToken }),
-            });
+            await makeApiCall('/api/logout', 'POST', { refreshToken });
 
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
@@ -169,30 +139,17 @@
       // Modify the fetchWeeklySummary function
       async function fetchWeeklySummary() {
         try {
-          const response = await fetch('/api/user/summary', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          const data = await makeApiCall('/api/user/summary', 'GET');
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return fetchWeeklySummary(); // Retry with new token
-          }
-
-          if (response.status === 404) {
+          if (data.status === 404) {
             displayNoSummaryMessage();
-          } else if (response.ok) {
-            const data = await response.json();
+          } else {
             displayBasicInsights(data.basicInsights);
             if (data.aiInsights && data.aiInsights.length > 0) {
               displayAIInsights(data.aiInsights);
             } else {
               displayProFeatureMessage();
             }
-          } else {
-            throw new Error('Failed to fetch weekly summary');
           }
         } catch (error) {
           console.error('Error:', error);

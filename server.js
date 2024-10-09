@@ -744,7 +744,7 @@ app.post('/api/login', strictLimiter, async (req, res) => {
     );
 
     const refreshToken = uuidv4();
-    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days from now
+    const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days from now
 
     db.run(
       `INSERT INTO refresh_tokens (userId, token, expiresAt) VALUES (?, ?, ?)`,

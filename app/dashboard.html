@@ -289,7 +289,9 @@
       </div>
     </section>
 
-    <script>
+    <script type="module">
+      import { makeApiCall } from './api-script.js';
+
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
       const refreshToken = localStorage.getItem('refreshToken');
@@ -300,57 +302,17 @@
       let currentDate = new Date();
       const maxPastMonths = 11;
 
-      // Add this function to refresh the access token
-      async function refreshAccessToken() {
-        try {
-          const response = await fetch('/api/refresh-token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ refreshToken }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            localStorage.setItem('accessToken', data.accessToken);
-            return data.accessToken;
-          } else {
-            throw new Error('Failed to refresh token');
-          }
-        } catch (error) {
-          console.error('Error refreshing token:', error);
-          // Redirect to login page if refresh fails
-          window.location.href = 'login.html';
-        }
-      }
-
       // Modify the fetchMoodEntries function
       async function fetchMoodEntries() {
         try {
           const [moodResponse, activitiesResponse] = await Promise.all([
-            fetch('/api/moods', {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }),
+            makeApiCall('/api/moods', 'GET'),
             fetchCustomActivities(),
           ]);
 
-          if (moodResponse.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return fetchMoodEntries(); // Retry with new token
-          }
-
-          if (moodResponse.ok) {
-            const moods = await moodResponse.json();
-            updateActivitiesCombobox(activitiesResponse);
-            preSelectTodayMood(moods);
-            displayCalendar(moods);
-          } else {
-            throw new Error('Failed to fetch mood entries');
-          }
+          updateActivitiesCombobox(activitiesResponse);
+          preSelectTodayMood(moodResponse);
+          displayCalendar(moodResponse);
         } catch (error) {
           console.error('Error:', error);
           alert('Failed to fetch mood entries. Please try again.');
@@ -360,29 +322,11 @@
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
-          const response = await fetch('/api/user/activities', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          const response = await makeApiCall('/api/user/activities', 'GET');
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            return fetchCustomActivities(); // Retry with new token
-          }
-
-          if (response.ok) {
-            const data = await response.json();
-            return data.activities.length > 0
-              ? data.activities
-              : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
-          } else if (response.status === 403) {
-            // User doesn't have pro or enterprise account
-            return null;
-          } else {
-            throw new Error('Failed to fetch custom activities');
-          }
+          return response.activities.length > 0
+            ? response.activities
+            : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
         } catch (error) {
           console.error('Error:', error);
           return null;
@@ -560,14 +504,7 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            const response = await fetch('/api/logout', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({ refreshToken }),
-            });
+            await makeApiCall('/api/logout', 'POST', { refreshToken });
 
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
@@ -619,32 +556,14 @@
           ).map((checkbox) => checkbox.value);
 
           try {
-            const response = await fetch('/api/mood', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({
-                rating: parseInt(rating),
-                comment: comment,
-                activities: selectedActivities,
-              }),
+            await makeApiCall('/api/mood', 'POST', {
+              rating: parseInt(rating),
+              comment: comment,
+              activities: selectedActivities,
             });
 
-            if (response.status === 401) {
-              // Token expired, try to refresh
-              const newAccessToken = await refreshAccessToken();
-              // Retry submission with new token
-              return document.getElementById('submitMood').click();
-            }
-
-            if (response.ok) {
-              alert('Mood submitted successfully!');
-              fetchMoodEntries(); // Refresh the mood entries
-            } else {
-              throw new Error('Failed to submit mood');
-            }
+            alert('Mood submitted successfully!');
+            fetchMoodEntries(); // Refresh the mood entries
           } catch (error) {
             console.error('Error:', error);
             alert('Failed to submit mood. Please try again.');

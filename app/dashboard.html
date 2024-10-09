@@ -301,6 +301,20 @@
       let currentDate = new Date();
       const maxPastMonths = 11;
 
+      // Move this function outside of the module scope
+      window.showCheckboxes = function () {
+        var checkboxes = document.getElementById('checkboxes');
+        if (!expanded) {
+          checkboxes.style.display = 'block';
+          expanded = true;
+        } else {
+          checkboxes.style.display = 'none';
+          expanded = false;
+        }
+      };
+
+      let expanded = false;
+
       // Modify the fetchMoodEntries function
       async function fetchMoodEntries() {
         try {
@@ -522,19 +536,6 @@
           option.classList.add('selected');
         });
       });
-
-      let expanded = false;
-
-      function showCheckboxes() {
-        var checkboxes = document.getElementById('checkboxes');
-        if (!expanded) {
-          checkboxes.style.display = 'block';
-          expanded = true;
-        } else {
-          checkboxes.style.display = 'none';
-          expanded = false;
-        }
-      }
 
       // Modify the mood submission functionality
       document

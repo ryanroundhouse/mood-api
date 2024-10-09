@@ -393,29 +393,27 @@
       }
 
       // Modify the logout functionality
-      document.getElementById('logoutBtn').addEventListener('click', async () => {
-        try {
-          const response = await fetch('/api/logout', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({ refreshToken }),
-          });
+      document
+        .getElementById('logoutBtn')
+        .addEventListener('click', async () => {
+          try {
+            const response = await fetch('/api/logout', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ refreshToken }),
+            });
 
-          if (response.ok) {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';
-          } else {
-            throw new Error('Logout failed');
+          } catch (error) {
+            console.error('Error logging out:', error);
+            alert('Failed to logout. Please try again.');
           }
-        } catch (error) {
-          console.error('Error logging out:', error);
-          alert('Failed to logout. Please try again.');
-        }
-      });
+        });
 
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
@@ -578,91 +576,97 @@
       });
 
       // Modify the upgrade functionality
-      document.getElementById('upgradeButton').addEventListener('click', async (event) => {
-        event.preventDefault();
+      document
+        .getElementById('upgradeButton')
+        .addEventListener('click', async (event) => {
+          event.preventDefault();
 
-        const { paymentMethod, error } = await stripe.createPaymentMethod({
-          type: 'card',
-          card: card,
-          billing_details: {
-            name: window.userDetails.name,
-            email: window.userDetails.email,
-          },
-        });
-
-        if (error) {
-          const errorElement = document.getElementById('card-errors');
-          errorElement.textContent = error.message;
-          return;
-        }
-
-        const paymentMethodId = paymentMethod.id;
-
-        try {
-          const response = await fetch('/api/upgrade', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
+          const { paymentMethod, error } = await stripe.createPaymentMethod({
+            type: 'card',
+            card: card,
+            billing_details: {
+              name: window.userDetails.name,
+              email: window.userDetails.email,
             },
-            body: JSON.stringify({ paymentMethodId }),
           });
 
-          if (response.status === 401) {
-            // Token expired, try to refresh
-            const newAccessToken = await refreshAccessToken();
-            // Retry upgrade with new token
-            return document.getElementById('upgradeButton').click();
+          if (error) {
+            const errorElement = document.getElementById('card-errors');
+            errorElement.textContent = error.message;
+            return;
           }
 
-          if (response.ok) {
-            alert('Your account has been upgraded to Pro!');
-            // Optionally, you can redirect the user or update the UI to reflect the new account status
-          } else {
-            const errorData = await response.json();
-            alert('Error: ' + errorData.error);
-          }
-        } catch (error) {
-          console.error('Error during upgrade:', error);
-          alert('An error occurred. Please try again.');
-        }
-      });
+          const paymentMethodId = paymentMethod.id;
 
-      // Modify the downgrade functionality
-      document.getElementById('downgradeButton').addEventListener('click', async (event) => {
-        event.preventDefault();
-        const confirmDowngrade = confirm('Are you sure you want to cancel your subscription?');
-        if (confirmDowngrade) {
           try {
-            const response = await fetch('/api/downgrade', {
+            const response = await fetch('/api/upgrade', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${accessToken}`,
               },
+              body: JSON.stringify({ paymentMethodId }),
             });
 
             if (response.status === 401) {
               // Token expired, try to refresh
               const newAccessToken = await refreshAccessToken();
-              // Retry downgrade with new token
-              return document.getElementById('downgradeButton').click();
+              // Retry upgrade with new token
+              return document.getElementById('upgradeButton').click();
             }
 
             if (response.ok) {
-              alert('Your account has been downgraded.');
+              alert('Your account has been upgraded to Pro!');
               // Optionally, you can redirect the user or update the UI to reflect the new account status
-              window.location.reload();
             } else {
               const errorData = await response.json();
               alert('Error: ' + errorData.error);
             }
           } catch (error) {
-            console.error('Error during downgrade:', error);
+            console.error('Error during upgrade:', error);
             alert('An error occurred. Please try again.');
           }
-        }
-      });
+        });
+
+      // Modify the downgrade functionality
+      document
+        .getElementById('downgradeButton')
+        .addEventListener('click', async (event) => {
+          event.preventDefault();
+          const confirmDowngrade = confirm(
+            'Are you sure you want to cancel your subscription?'
+          );
+          if (confirmDowngrade) {
+            try {
+              const response = await fetch('/api/downgrade', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              });
+
+              if (response.status === 401) {
+                // Token expired, try to refresh
+                const newAccessToken = await refreshAccessToken();
+                // Retry downgrade with new token
+                return document.getElementById('downgradeButton').click();
+              }
+
+              if (response.ok) {
+                alert('Your account has been downgraded.');
+                // Optionally, you can redirect the user or update the UI to reflect the new account status
+                window.location.reload();
+              } else {
+                const errorData = await response.json();
+                alert('Error: ' + errorData.error);
+              }
+            } catch (error) {
+              console.error('Error during downgrade:', error);
+              alert('An error occurred. Please try again.');
+            }
+          }
+        });
 
       // Fetch user settings when the page loads
       fetchUserSettings();

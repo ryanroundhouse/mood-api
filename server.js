@@ -904,7 +904,7 @@ app.post('/api/forgot-password', strictLimiter, (req, res) => {
           return res.status(500).json({ error: 'Internal server error' });
         }
 
-        const resetLink = `${BASE_URL}/api/reset-password.html?token=${resetToken}`;
+        const resetLink = `${BASE_URL}/reset-password.html?token=${resetToken}`;
         transporter.sendMail({
           from: NOREPLY_EMAIL,
           to: email,
@@ -1386,28 +1386,34 @@ app.post('/api/refresh-token', async (req, res) => {
       }
 
       if (!tokenData) {
-        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+        return res
+          .status(401)
+          .json({ error: 'Invalid or expired refresh token' });
       }
 
-      db.get(`SELECT * FROM users WHERE id = ?`, [tokenData.userId], (err, user) => {
-        if (err) {
-          logger.error('Error fetching user for refresh token:', err);
-          return res.status(500).json({ error: 'Internal server error' });
+      db.get(
+        `SELECT * FROM users WHERE id = ?`,
+        [tokenData.userId],
+        (err, user) => {
+          if (err) {
+            logger.error('Error fetching user for refresh token:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+          }
+
+          const newAccessToken = jwt.sign(
+            { id: user.id, accountLevel: user.accountLevel },
+            JWT_SECRET,
+            { expiresIn: '15m' }
+          );
+
+          logger.info(`Access token refreshed for user: ${user.id}`);
+          res.json({ accessToken: newAccessToken });
         }
-
-        if (!user) {
-          return res.status(401).json({ error: 'User not found' });
-        }
-
-        const newAccessToken = jwt.sign(
-          { id: user.id, accountLevel: user.accountLevel },
-          JWT_SECRET,
-          { expiresIn: '15m' }
-        );
-
-        logger.info(`Access token refreshed for user: ${user.id}`);
-        res.json({ accessToken: newAccessToken });
-      });
+      );
     }
   );
 });

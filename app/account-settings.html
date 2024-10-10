@@ -143,6 +143,62 @@
       .upgrade-section button:hover {
         opacity: 0.9;
       }
+
+      /* Hamburger menu styles */
+      .hamburger-menu {
+        display: none;
+        flex-direction: column;
+        cursor: pointer;
+      }
+
+      .hamburger-menu span {
+        width: 25px;
+        height: 3px;
+        background-color: #333;
+        margin: 2px 0;
+        transition: 0.4s;
+      }
+
+      @media (max-width: 768px) {
+        .hamburger-menu {
+          display: flex;
+        }
+
+        .nav-menu {
+          display: none;
+          flex-direction: column;
+          position: absolute;
+          top: 60px;
+          right: 0;
+          background-color: #f8f8f8;
+          width: 200px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-menu.active {
+          display: flex;
+        }
+
+        .nav-menu li {
+          margin: 0;
+        }
+
+        .nav-menu a {
+          display: block;
+          padding: 10px 0;
+          text-decoration: none;
+          color: #333;
+        }
+
+        .nav-menu a:hover {
+          background-color: #e8e8e8;
+        }
+
+        .menu-item {
+          display: block;
+          padding-left: 10px;
+        }
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -150,11 +206,30 @@
     <header>
       <a href="index.html"><div class="logo">Moodful</div></a>
       <nav>
-        <ul>
-          <li><a href="dashboard.html">Dashboard</a></li>
-          <li><a href="weekly-summary.html">Weekly Summary</a></li>
-          <li><a href="account-settings.html">Account Settings</a></li>
-          <li><a href="#" id="logoutBtn">Logout</a></li>
+        <div class="hamburger-menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <ul class="nav-menu">
+          <li>
+            <a href="dashboard.html"
+              ><span class="menu-item">Dashboard</span></a
+            >
+          </li>
+          <li>
+            <a href="weekly-summary.html"
+              ><span class="menu-item">Weekly Summary</span></a
+            >
+          </li>
+          <li>
+            <a href="account-settings.html"
+              ><span class="menu-item">Account Settings</span></a
+            >
+          </li>
+          <li>
+            <a href="#" id="logoutBtn"><span class="menu-item">Logout</span></a>
+          </li>
         </ul>
       </nav>
     </header>
@@ -507,6 +582,24 @@
       document
         .getElementById('exportMoodData')
         .addEventListener('click', exportMoodData);
+
+      // Add this at the end of your script
+      const hamburgerMenu = document.querySelector('.hamburger-menu');
+      const navMenu = document.querySelector('.nav-menu');
+
+      hamburgerMenu.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+      });
+
+      // Close the menu when clicking outside
+      document.addEventListener('click', (event) => {
+        if (
+          !hamburgerMenu.contains(event.target) &&
+          !navMenu.contains(event.target)
+        ) {
+          navMenu.classList.remove('active');
+        }
+      });
     </script>
   </body>
 </html>

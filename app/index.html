@@ -33,11 +33,68 @@
       content="Discover patterns in your emotions, gain personal insights, and improve your well-being with Moodful's intuitive mood tracking tools."
     />
     <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* Hamburger menu styles */
+      .hamburger-menu {
+        display: none;
+        flex-direction: column;
+        cursor: pointer;
+      }
+
+      .hamburger-menu span {
+        width: 25px;
+        height: 3px;
+        background-color: #333;
+        margin: 2px 0;
+        transition: 0.4s;
+      }
+
+      @media (max-width: 768px) {
+        .hamburger-menu {
+          display: flex;
+        }
+
+        nav ul {
+          display: none;
+          flex-direction: column;
+          position: absolute;
+          top: 60px;
+          right: 0;
+          background-color: #f8f8f8;
+          width: 200px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        nav ul.active {
+          display: flex;
+        }
+
+        nav ul li {
+          margin: 0;
+        }
+
+        nav ul a {
+          display: block;
+          padding: 10px 20px;
+          text-decoration: none;
+          color: #333;
+        }
+
+        nav ul a:hover {
+          background-color: #e8e8e8;
+        }
+      }
+    </style>
   </head>
   <body>
     <header>
       <a href="index.html"><div class="logo">Moodful</div></a>
       <nav>
+        <div class="hamburger-menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
         <ul>
           <li><a href="features.html">Features</a></li>
           <li><a href="pricing.html">Pricing</a></li>
@@ -142,6 +199,23 @@
           }
         }
       })();
+
+      const hamburgerMenu = document.querySelector('.hamburger-menu');
+      const navMenu = document.querySelector('nav ul');
+
+      hamburgerMenu.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+      });
+
+      // Close the menu when clicking outside
+      document.addEventListener('click', (event) => {
+        if (
+          !hamburgerMenu.contains(event.target) &&
+          !navMenu.contains(event.target)
+        ) {
+          navMenu.classList.remove('active');
+        }
+      });
     </script>
   </body>
 </html>

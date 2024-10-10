@@ -4,16 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Submit Mood - Moodful | Track Your Daily Emotions</title>
-    <meta name="description" content="Record your daily mood with Moodful. Select an emoji, add activities, and leave comments to track your emotional well-being over time.">
-    <meta name="keywords" content="Moodful, mood tracking, emotional well-being, daily mood, mental health, self-reflection">
-    <meta name="robots" content="noindex, nofollow">
-    <meta property="og:title" content="Submit Your Daily Mood - Moodful">
-    <meta property="og:description" content="Track your emotional journey with Moodful. Record your mood, activities, and thoughts to gain insights into your well-being.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://moodful.ca/mood.html">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Submit Your Daily Mood - Moodful">
-    <meta name="twitter:description" content="Track your emotional journey with Moodful. Record your mood, activities, and thoughts to gain insights into your well-being.">
+    <meta
+      name="description"
+      content="Record your daily mood with Moodful. Select an emoji, add activities, and leave comments to track your emotional well-being over time."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, mood tracking, emotional well-being, daily mood, mental health, self-reflection"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta property="og:title" content="Submit Your Daily Mood - Moodful" />
+    <meta
+      property="og:description"
+      content="Track your emotional journey with Moodful. Record your mood, activities, and thoughts to gain insights into your well-being."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://moodful.ca/mood.html" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Submit Your Daily Mood - Moodful" />
+    <meta
+      name="twitter:description"
+      content="Track your emotional journey with Moodful. Record your mood, activities, and thoughts to gain insights into your well-being."
+    />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .mood-options {
@@ -88,11 +100,93 @@
       #checkboxes label:hover {
         background-color: #1e90ff;
       }
+      /* Hamburger menu styles */
+      .hamburger-menu {
+        display: none;
+        flex-direction: column;
+        cursor: pointer;
+      }
+
+      .hamburger-menu span {
+        width: 25px;
+        height: 3px;
+        background-color: #333;
+        margin: 2px 0;
+        transition: 0.4s;
+      }
+
+      @media (max-width: 768px) {
+        .hamburger-menu {
+          display: flex;
+        }
+
+        .nav-menu {
+          display: none;
+          flex-direction: column;
+          position: absolute;
+          top: 60px;
+          right: 0;
+          background-color: #f8f8f8;
+          width: 200px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-menu.active {
+          display: flex;
+        }
+
+        .nav-menu li {
+          margin: 0;
+        }
+
+        .nav-menu a {
+          display: block;
+          padding: 10px 0;
+          text-decoration: none;
+          color: #333;
+        }
+
+        .nav-menu a:hover {
+          background-color: #e8e8e8;
+        }
+
+        .menu-item {
+          display: block;
+          padding-left: 10px;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
       <a href="index.html"><div class="logo">Moodful</div></a>
+      <nav>
+        <div class="hamburger-menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <ul class="nav-menu">
+          <li>
+            <a href="dashboard.html"
+              ><span class="menu-item">Dashboard</span></a
+            >
+          </li>
+          <li>
+            <a href="weekly-summary.html"
+              ><span class="menu-item">Weekly Summary</span></a
+            >
+          </li>
+          <li>
+            <a href="account-settings.html"
+              ><span class="menu-item">Account Settings</span></a
+            >
+          </li>
+          <li>
+            <a href="#" id="logoutBtn"><span class="menu-item">Logout</span></a>
+          </li>
+        </ul>
+      </nav>
     </header>
 
     <section class="hero dashboard-hero">
@@ -271,6 +365,24 @@
           expanded = false;
         }
       }
+
+      // Add this at the end of your script
+      const hamburgerMenu = document.querySelector('.hamburger-menu');
+      const navMenu = document.querySelector('.nav-menu');
+
+      hamburgerMenu.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+      });
+
+      // Close the menu when clicking outside
+      document.addEventListener('click', (event) => {
+        if (
+          !hamburgerMenu.contains(event.target) &&
+          !navMenu.contains(event.target)
+        ) {
+          navMenu.classList.remove('active');
+        }
+      });
     </script>
   </body>
 </html>

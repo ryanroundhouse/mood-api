@@ -4,16 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Features - Moodful | Powerful Tools for Emotional Well-being</title>
-    <meta name="description" content="Explore Moodful's powerful features including daily mood tracking, AI-powered insights, customizable tags, and guided meditation sessions to improve your emotional well-being.">
-    <meta name="keywords" content="Moodful, features, mood tracking, emotional well-being, AI insights, meditation, employee wellness">
-    <meta name="author" content="Moodful Team">
-    <meta property="og:title" content="Moodful Features - Empowering Your Emotional Health">
-    <meta property="og:description" content="Discover how Moodful's features like mood tracking, AI insights, and guided meditations can help you understand and improve your emotional well-being.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://moodful.ca/features.html">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Moodful Features - Empowering Your Emotional Health">
-    <meta name="twitter:description" content="Discover how Moodful's features like mood tracking, AI insights, and guided meditations can help you understand and improve your emotional well-being.">
+    <meta
+      name="description"
+      content="Explore Moodful's powerful features including daily mood tracking, AI-powered insights, customizable tags, and guided meditation sessions to improve your emotional well-being."
+    />
+    <meta
+      name="keywords"
+      content="Moodful, features, mood tracking, emotional well-being, AI insights, meditation, employee wellness"
+    />
+    <meta name="author" content="Moodful Team" />
+    <meta
+      property="og:title"
+      content="Moodful Features - Empowering Your Emotional Health"
+    />
+    <meta
+      property="og:description"
+      content="Discover how Moodful's features like mood tracking, AI insights, and guided meditations can help you understand and improve your emotional well-being."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://moodful.ca/features.html" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Moodful Features - Empowering Your Emotional Health"
+    />
+    <meta
+      name="twitter:description"
+      content="Discover how Moodful's features like mood tracking, AI insights, and guided meditations can help you understand and improve your emotional well-being."
+    />
     <link rel="stylesheet" href="styles.css" />
     <style>
       .features-hero h1 {
@@ -81,12 +99,68 @@
       footer ul li a:hover {
         color: #5a79bc;
       }
+
+      /* Hamburger menu styles */
+      .hamburger-menu {
+        display: none;
+        flex-direction: column;
+        cursor: pointer;
+      }
+
+      .hamburger-menu span {
+        width: 25px;
+        height: 3px;
+        background-color: #333;
+        margin: 2px 0;
+        transition: 0.4s;
+      }
+
+      @media (max-width: 768px) {
+        .hamburger-menu {
+          display: flex;
+        }
+
+        nav ul {
+          display: none;
+          flex-direction: column;
+          position: absolute;
+          top: 60px;
+          right: 0;
+          background-color: #f8f8f8;
+          width: 200px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        nav ul.active {
+          display: flex;
+        }
+
+        nav ul li {
+          margin: 0;
+        }
+
+        nav ul li a {
+          display: block;
+          padding: 10px 20px;
+          text-decoration: none;
+          color: #333;
+        }
+
+        nav ul li a:hover {
+          background-color: #e8e8e8;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
       <a href="index.html"><div class="logo">Moodful</div></a>
       <nav>
+        <div class="hamburger-menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
         <ul>
           <li><a href="features.html">Features</a></li>
           <li><a href="pricing.html">Pricing</a></li>
@@ -190,5 +264,25 @@
         <li><a href="privacy.html">Privacy Policy</a></li>
       </ul>
     </footer>
+
+    <script>
+      // Add this at the end of your body, before the closing </body> tag
+      const hamburgerMenu = document.querySelector('.hamburger-menu');
+      const navMenu = document.querySelector('nav ul');
+
+      hamburgerMenu.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+      });
+
+      // Close the menu when clicking outside
+      document.addEventListener('click', (event) => {
+        if (
+          !hamburgerMenu.contains(event.target) &&
+          !navMenu.contains(event.target)
+        ) {
+          navMenu.classList.remove('active');
+        }
+      });
+    </script>
   </body>
 </html>

@@ -199,6 +199,56 @@
           padding-left: 10px;
         }
       }
+
+      /* Styles for the on/off slider button */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: 0.4s;
+        border-radius: 34px;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: '';
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: 0.4s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider {
+        background-color: #6a89cc;
+      }
+
+      input:checked + .slider:before {
+        transform: translateX(26px);
+      }
+
+      .switch-label {
+        margin-left: 70px;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -246,22 +296,24 @@
           <input type="text" id="name" name="name" required />
         </div>
         <div class="form-group">
-          <label>
+          <label class="switch">
             <input
               type="checkbox"
               id="dailyNotifications"
               name="dailyNotifications"
             />
-            Receive daily mood reminders
+            <span class="slider"></span>
           </label>
+          <span class="switch-label">Receive daily mood reminders</span>
         </div>
         <div class="form-group">
-          <label>
+          <label class="switch">
             <input type="checkbox" id="weeklySummary" name="weeklySummary" />
-            Receive weekly mood summaries
+            <span class="slider"></span>
           </label>
+          <span class="switch-label">Receive weekly mood summaries</span>
         </div>
-        <button type="submit">Save Changes</button>
+        <!-- Save button removed -->
       </form>
       <div id="exportContainer" style="display: none; margin-top: 20px">
         <button id="exportMoodData">Export Mood Data</button>
@@ -315,6 +367,14 @@
           document.getElementById('weeklySummary').checked =
             settings.weeklySummary;
 
+          // Add event listeners for the toggles
+          document
+            .getElementById('dailyNotifications')
+            .addEventListener('change', updateSetting);
+          document
+            .getElementById('weeklySummary')
+            .addEventListener('change', updateSetting);
+
           // Store user details for later use
           window.userDetails = {
             name: settings.name,
@@ -345,24 +405,21 @@
         }
       }
 
-      // Modify the updateUserSettings function
-      async function updateUserSettings(event) {
-        event.preventDefault();
-        const name = document.getElementById('name').value;
-        const dailyNotifications =
-          document.getElementById('dailyNotifications').checked;
-        const weeklySummary = document.getElementById('weeklySummary').checked;
+      // New function to update individual settings
+      async function updateSetting(event) {
+        const setting = event.target.name;
+        const value = event.target.checked;
 
         try {
           await makeApiCall('/api/user/settings', 'PUT', {
-            name,
-            dailyNotifications,
-            weeklySummary,
+            [setting]: value,
           });
-          alert('Settings updated successfully!');
+          console.log(`${setting} updated successfully!`);
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to update user settings. Please try again.');
+          alert(`Failed to update ${setting}. Please try again.`);
+          // Revert the toggle if the update failed
+          event.target.checked = !value;
         }
       }
 
@@ -572,11 +629,6 @@
 
       // Fetch user settings when the page loads
       fetchUserSettings();
-
-      // Add event listener for form submission
-      document
-        .getElementById('settingsForm')
-        .addEventListener('submit', updateUserSettings);
 
       // Add event listener for mood data export
       document

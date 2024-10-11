@@ -254,7 +254,9 @@
         padding: 10px;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         z-index: 1000;
-        min-width: 200px; /* Add this line */
+        min-width: 200px;
+        max-width: 500px;
+        width: 100%;
       }
 
       .mood-bubble-close {
@@ -727,7 +729,7 @@
 
         // Adjust horizontal position if it extends past the right edge of the screen
         if (left + bubbleRect.width > window.innerWidth) {
-          left = window.innerWidth - bubbleRect.width - 10; // 10px padding from the edge
+          left = window.innerWidth - bubbleRect.width - 20; // 10px padding from the edge
         }
 
         // Adjust horizontal position if it extends past the left edge of the screen

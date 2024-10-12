@@ -14,7 +14,7 @@ async function makeApiCall(url, method = 'GET', body = null, headers = {}) {
   try {
     const response = await fetch(url, options);
 
-    if (response.status === 403) {
+    if (response.status === 401) {
       // Token might be expired, attempt to refresh
       const newAccessToken = await refreshAccessToken();
       if (newAccessToken) {

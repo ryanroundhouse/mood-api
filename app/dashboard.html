@@ -391,7 +391,10 @@
     </section>
 
     <script type="module">
-      import { makeApiCall } from './api-script.js';
+      import {
+        authenticatedApiCall,
+        unauthenticatedApiCall,
+      } from './api-script.js';
 
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
@@ -421,7 +424,7 @@
       async function fetchMoodEntries() {
         try {
           const [moodResponse, activitiesResponse] = await Promise.all([
-            makeApiCall('/api/moods', 'GET'),
+            authenticatedApiCall('/api/moods', 'GET'),
             fetchCustomActivities(),
           ]);
 
@@ -437,7 +440,10 @@
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
-          const response = await makeApiCall('/api/user/activities', 'GET');
+          const response = await authenticatedApiCall(
+            '/api/user/activities',
+            'GET'
+          );
 
           return response.activities.length > 0
             ? response.activities
@@ -624,13 +630,13 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            await makeApiCall('/api/logout', 'POST', { refreshToken });
-
+            await unauthenticatedApiCall('/api/logout', 'POST', {
+              refreshToken,
+            });
+          } finally {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';
-          } catch (error) {
-            console.error('Error logging out:', error);
           }
         });
 
@@ -663,7 +669,7 @@
           ).map((checkbox) => checkbox.value);
 
           try {
-            await makeApiCall('/api/mood', 'POST', {
+            await authenticatedApiCall('/api/mood', 'POST', {
               rating: parseInt(rating),
               comment: comment,
               activities: selectedActivities,

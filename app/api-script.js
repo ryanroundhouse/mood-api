@@ -1,4 +1,9 @@
-async function makeApiCall(url, method = 'GET', body = null, headers = {}) {
+async function authenticatedApiCall(
+  url,
+  method = 'GET',
+  body = null,
+  headers = {}
+) {
   const baseHeaders = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
@@ -75,5 +80,31 @@ async function handleResponse(response) {
   return await response.json();
 }
 
-// Export the function to make it available for use
-export { makeApiCall };
+async function unauthenticatedApiCall(
+  url,
+  method = 'GET',
+  body = null,
+  headers = {}
+) {
+  const baseHeaders = {
+    'Content-Type': 'application/json',
+    ...headers,
+  };
+
+  const options = {
+    method,
+    headers: baseHeaders,
+    body: body ? JSON.stringify(body) : null,
+  };
+
+  try {
+    const response = await fetch(url, options);
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Unauthenticated API call failed:', error);
+    throw error;
+  }
+}
+
+// Update the export statement to include the new function
+export { authenticatedApiCall, unauthenticatedApiCall };

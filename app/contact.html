@@ -195,7 +195,9 @@
       </ul>
     </footer>
 
-    <script>
+    <script type="module">
+      import { unauthenticatedApiCall } from './api-script.js';
+
       document
         .getElementById('contactForm')
         .addEventListener('submit', async (event) => {
@@ -214,27 +216,20 @@
             const subject = document.getElementById('subject').value;
             const message = document.getElementById('message').value;
 
-            const response = await fetch('/api/contact', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
+            const response = await unauthenticatedApiCall(
+              '/api/contact',
+              'POST',
+              {
                 name,
                 email,
                 subject,
                 message,
                 recaptchaToken: token,
-              }),
-            });
+              }
+            );
 
-            if (response.ok) {
-              alert('Message sent successfully!');
-              document.getElementById('contactForm').reset();
-            } else {
-              const errorData = await response.json();
-              alert('Error: ' + errorData.error);
-            }
+            alert('Message sent successfully!');
+            document.getElementById('contactForm').reset();
           } catch (error) {
             console.error('Error sending message:', error);
             alert('An error occurred. Please try again.');

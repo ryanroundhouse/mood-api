@@ -243,7 +243,9 @@
       <button id="submitMood">Submit Mood</button>
     </section>
 
-    <script>
+    <script type="module">
+      import { unauthenticatedApiCall } from './api-script.js';
+
       // Get URL parameters
       const urlParams = new URLSearchParams(window.location.search);
       const rating = urlParams.get('rating');
@@ -252,17 +254,10 @@
       // Update this function to fetch custom activities using the auth code
       async function fetchCustomActivities() {
         try {
-          const response = await fetch(`/api/user/activities/${authCode}`);
-
-          if (response.ok) {
-            const data = await response.json();
-            return data.activities;
-          } else if (response.status === 403) {
-            // User doesn't have pro or enterprise account
-            return null;
-          } else {
-            throw new Error('Failed to fetch custom activities');
-          }
+          const data = await unauthenticatedApiCall(
+            `/api/user/activities/${authCode}`
+          );
+          return data.activities;
         } catch (error) {
           console.error('Error:', error);
           return null;
@@ -334,24 +329,14 @@
           ).map((checkbox) => checkbox.value);
 
           try {
-            const response = await fetch(`/api/mood/${authCode}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                rating: parseInt(rating),
-                comment: comment,
-                activities: selectedActivities,
-              }),
+            await unauthenticatedApiCall(`/api/mood/${authCode}`, 'POST', {
+              rating: parseInt(rating),
+              comment: comment,
+              activities: selectedActivities,
             });
 
-            if (response.ok) {
-              alert('Mood submitted successfully!');
-              window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
-            } else {
-              throw new Error('Failed to submit mood');
-            }
+            alert('Mood submitted successfully!');
+            window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
           } catch (error) {
             console.error('Error:', error);
             alert('Failed to submit mood. Please try again.');

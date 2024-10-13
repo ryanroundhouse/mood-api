@@ -191,7 +191,10 @@
     </div>
 
     <script type="module">
-      import { makeApiCall } from './api-script.js';
+      import {
+        authenticatedApiCall,
+        unauthenticatedApiCall,
+      } from './api-script.js';
 
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
@@ -205,21 +208,20 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            await makeApiCall('/api/logout', 'POST', { refreshToken });
-
+            await unauthenticatedApiCall('/api/logout', 'POST', {
+              refreshToken,
+            });
+          } finally {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';
-          } catch (error) {
-            console.error('Error logging out:', error);
-            alert('Failed to logout. Please try again.');
           }
         });
 
       // Modify the fetchWeeklySummary function
       async function fetchWeeklySummary() {
         try {
-          const data = await makeApiCall('/api/user/summary', 'GET');
+          const data = await authenticatedApiCall('/api/user/summary', 'GET');
 
           if (data.status === 404) {
             displayNoSummaryMessage();

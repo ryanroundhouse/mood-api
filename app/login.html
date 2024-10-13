@@ -229,7 +229,9 @@
       </ul>
     </footer>
 
-    <script>
+    <script type="module">
+      import { unauthenticatedApiCall } from './api-script.js';
+
       // Add this function at the beginning of the script
       function checkEmailVerification() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -253,36 +255,23 @@
           const password = document.getElementById('password').value;
 
           try {
-            const response = await fetch('/api/login', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ email, password }),
+            const data = await unauthenticatedApiCall('/api/login', 'POST', {
+              email,
+              password,
             });
-
-            if (response.ok) {
-              const data = await response.json();
-              localStorage.setItem('accessToken', data.accessToken);
-              localStorage.setItem('refreshToken', data.refreshToken);
-              window.location.href = 'dashboard.html'; // Redirect to dashboard
-            } else {
-              const errorData = await response.json();
-              if (
-                response.status === 400 &&
-                errorData.message ===
-                  'Please verify your email before logging in'
-              ) {
-                alert(
-                  'Please verify your email before logging in. Check your inbox for a verification link.'
-                );
-              } else {
-                alert('Login failed. Please check your credentials.');
-              }
-            }
+            localStorage.setItem('accessToken', data.accessToken);
+            localStorage.setItem('refreshToken', data.refreshToken);
+            window.location.href = 'dashboard.html'; // Redirect to dashboard
           } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred. Please try again.');
+            if (
+              error.message === 'Please verify your email before logging in'
+            ) {
+              alert(
+                'Please verify your email before logging in. Check your inbox for a verification link.'
+              );
+            } else {
+              alert('Login failed. Please check your credentials.');
+            }
           }
         });
 

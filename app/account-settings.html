@@ -304,8 +304,8 @@
           <label class="switch">
             <input
               type="checkbox"
-              id="dailyNotifications"
-              name="dailyNotifications"
+              id="emailDailyNotifications"
+              name="emailDailyNotifications"
             />
             <span class="slider"></span>
           </label>
@@ -313,7 +313,11 @@
         </div>
         <div class="form-group">
           <label class="switch">
-            <input type="checkbox" id="weeklySummary" name="weeklySummary" />
+            <input
+              type="checkbox"
+              id="emailWeeklySummary"
+              name="emailWeeklySummary"
+            />
             <span class="slider"></span>
           </label>
           <span class="switch-label">Receive weekly mood summaries</span>
@@ -351,7 +355,10 @@
     </section>
 
     <script type="module">
-      import { makeApiCall } from './api-script.js';
+      import {
+        authenticatedApiCall,
+        unauthenticatedApiCall,
+      } from './api-script.js';
 
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
@@ -365,19 +372,22 @@
       // Modify the fetchUserSettings function
       async function fetchUserSettings() {
         try {
-          const settings = await makeApiCall('/api/user/settings', 'GET');
+          const settings = await authenticatedApiCall(
+            '/api/user/settings',
+            'GET'
+          );
           document.getElementById('name').value = settings.name;
-          document.getElementById('dailyNotifications').checked =
-            settings.dailyNotifications;
-          document.getElementById('weeklySummary').checked =
-            settings.weeklySummary;
+          document.getElementById('emailDailyNotifications').checked =
+            settings.emailDailyNotifications;
+          document.getElementById('emailWeeklySummary').checked =
+            settings.emailWeeklySummary;
 
           // Add event listeners for the toggles
           document
-            .getElementById('dailyNotifications')
+            .getElementById('emailDailyNotifications')
             .addEventListener('change', updateSetting);
           document
-            .getElementById('weeklySummary')
+            .getElementById('emailWeeklySummary')
             .addEventListener('change', updateSetting);
 
           // Store user details for later use
@@ -416,7 +426,7 @@
         const value = event.target.checked;
 
         try {
-          await makeApiCall('/api/user/settings', 'PUT', {
+          await authenticatedApiCall('/api/user/settings', 'PUT', {
             [setting]: value,
           });
           console.log(`${setting} updated successfully!`);
@@ -431,7 +441,7 @@
       // Modify the exportMoodData function
       async function exportMoodData() {
         try {
-          const moodData = await makeApiCall('/api/moods', 'GET');
+          const moodData = await authenticatedApiCall('/api/moods', 'GET');
           console.log('Mood data:', moodData);
 
           // Remove userId from each mood entry
@@ -458,20 +468,23 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            await makeApiCall('/api/logout', 'POST', { refreshToken });
+            await unauthenticatedApiCall('/api/logout', 'POST', {
+              refreshToken,
+            });
+          } finally {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';
-          } catch (error) {
-            console.error('Error logging out:', error);
-            alert('Failed to logout. Please try again.');
           }
         });
 
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
-          const data = await makeApiCall('/api/user/activities', 'GET');
+          const data = await authenticatedApiCall(
+            '/api/user/activities',
+            'GET'
+          );
           let activities = data.activities;
 
           if (activities.length === 0) {
@@ -513,9 +526,13 @@
         const newActivity = document.getElementById('newActivity').value.trim();
         if (newActivity) {
           try {
-            const data = await makeApiCall('/api/user/activities', 'POST', {
-              activities: [...getCurrentActivities(), newActivity],
-            });
+            const data = await authenticatedApiCall(
+              '/api/user/activities',
+              'POST',
+              {
+                activities: [...getCurrentActivities(), newActivity],
+              }
+            );
             updateActivitiesList(data.activities);
             document.getElementById('newActivity').value = '';
           } catch (error) {
@@ -530,9 +547,13 @@
         const activities = getCurrentActivities();
         activities.splice(index, 1);
         try {
-          const data = await makeApiCall('/api/user/activities', 'POST', {
-            activities,
-          });
+          const data = await authenticatedApiCall(
+            '/api/user/activities',
+            'POST',
+            {
+              activities,
+            }
+          );
           updateActivitiesList(data.activities);
         } catch (error) {
           console.error('Error:', error);
@@ -600,9 +621,13 @@
           const paymentMethodId = paymentMethod.id;
 
           try {
-            const response = await makeApiCall('/api/upgrade', 'POST', {
-              paymentMethodId,
-            });
+            const response = await authenticatedApiCall(
+              '/api/upgrade',
+              'POST',
+              {
+                paymentMethodId,
+              }
+            );
             alert('Your account has been upgraded to Pro!');
             // Optionally, you can redirect the user or update the UI to reflect the new account status
           } catch (error) {
@@ -621,7 +646,7 @@
           );
           if (confirmDowngrade) {
             try {
-              await makeApiCall('/api/downgrade', 'POST');
+              await authenticatedApiCall('/api/downgrade', 'POST');
               alert('Your account has been downgraded.');
               // Optionally, you can redirect the user or update the UI to reflect the new account status
               window.location.reload();

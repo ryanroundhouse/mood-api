@@ -250,7 +250,9 @@
       </ul>
     </footer>
 
-    <script>
+    <script type="module">
+      import { unauthenticatedApiCall } from './api-script.js';
+
       const stripe = Stripe('pk_test_51N0qXXXXXXXXXXXXXXXXXXXX');
       const elements = stripe.elements();
       const cardElement = elements.create('card');
@@ -284,28 +286,21 @@
               paymentMethodId = paymentMethod.id;
             }
 
-            const response = await fetch('/api/register', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
+            const response = await unauthenticatedApiCall(
+              '/api/register',
+              'POST',
+              {
                 name,
                 email,
                 password,
                 paymentMethodId,
-              }),
-            });
+              }
+            );
 
-            if (response.ok) {
-              alert(
-                'Registration successful! Please check your email to verify your account.'
-              );
-              window.location.href = 'login.html';
-            } else {
-              const data = await response.json();
-              throw new Error(data.error || 'Registration failed');
-            }
+            alert(
+              'Registration successful! Please check your email to verify your account.'
+            );
+            window.location.href = 'login.html';
           } catch (error) {
             console.error('Error:', error);
             alert(error.message || 'An error occurred. Please try again.');

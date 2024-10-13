@@ -64,15 +64,25 @@ db.serialize(() => {
     )
   `);
 
-  // Rename notifications table to user_settings
+  // Rename notifications table to user_settings and add new columns if they don't exist
   db.run(`
     CREATE TABLE IF NOT EXISTS user_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId INTEGER NOT NULL UNIQUE,
-      dailyNotifications INTEGER DEFAULT 1,
-      weeklySummary INTEGER DEFAULT 1,
+      emailDailyNotifications INTEGER DEFAULT 1,
+      emailWeeklySummary INTEGER DEFAULT 1,
       FOREIGN KEY (userId) REFERENCES users(id)
     )
+  `);
+
+  // Check if appDailyNotifications column exists, add if it doesn't
+  db.run(`
+    ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS appDailyNotifications INTEGER DEFAULT 1
+  `);
+
+  // Check if appWeeklySummary column exists, add if it doesn't
+  db.run(`
+    ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS appWeeklySummary INTEGER DEFAULT 1
   `);
 
   // Create mood_auth_codes table if it doesn't exist
@@ -85,48 +95,6 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )
   `);
-
-  // Add accountLevel column to existing users table if it doesn't exist
-  db.all(`PRAGMA table_info(users)`, (err, rows) => {
-    if (err) {
-      logger.error('Error checking users table schema:', err);
-    } else if (rows && Array.isArray(rows)) {
-      const accountLevelExists = rows.some(
-        (row) => row.name === 'accountLevel'
-      );
-      if (!accountLevelExists) {
-        db.run(
-          `
-          ALTER TABLE users
-          ADD COLUMN accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise'))
-        `,
-          (alterErr) => {
-            if (alterErr) {
-              logger.error('Error adding accountLevel column:', alterErr);
-            } else {
-              logger.info('accountLevel column added to users table');
-            }
-          }
-        );
-      }
-    } else {
-      logger.error('Unexpected result from PRAGMA table_info(users)');
-    }
-  });
-
-  // Add activities column to moods table if it doesn't exist
-  db.run(
-    `
-    ALTER TABLE moods ADD COLUMN activities TEXT
-  `,
-    (err) => {
-      if (err && !err.message.includes('duplicate column name')) {
-        logger.error('Error adding activities column to moods table:', err);
-      } else {
-        logger.info('Activities column added to moods table or already exists');
-      }
-    }
-  );
 
   // Create custom_activities table
   db.run(`
@@ -145,70 +113,6 @@ db.serialize(() => {
       FOREIGN KEY (id) REFERENCES users(id)
     )
   `);
-
-  // Add columns to users table if they don't exist
-  db.all(`PRAGMA table_info(users)`, (err, rows) => {
-    if (err) {
-      logger.error('Error checking users table schema:', err);
-    } else if (rows && Array.isArray(rows)) {
-      const columnsToAdd = [
-        { name: 'stripeCustomerId', type: 'TEXT' },
-        { name: 'stripeSubscriptionId', type: 'TEXT' },
-      ];
-
-      columnsToAdd.forEach((column) => {
-        const columnExists = rows.some((row) => row.name === column.name);
-        if (!columnExists) {
-          db.run(
-            `ALTER TABLE users ADD COLUMN ${column.name} ${column.type}`,
-            (alterErr) => {
-              if (alterErr) {
-                logger.error(`Error adding ${column.name} column:`, alterErr);
-              } else {
-                logger.info(`${column.name} column added to users table`);
-              }
-            }
-          );
-        }
-      });
-    } else {
-      logger.error('Unexpected result from PRAGMA table_info(users)');
-    }
-  });
-
-  // Modify mood datetime values to add '-04:00' if not present
-  db.all(`SELECT id, datetime FROM moods`, [], (err, rows) => {
-    if (err) {
-      logger.error('Error fetching moods for datetime update:', err);
-      return;
-    }
-
-    rows.forEach((row) => {
-      let updatedDatetime = row.datetime;
-      if (
-        !updatedDatetime.endsWith('Z') &&
-        !updatedDatetime.match(/[+-]\d{2}:\d{2}$/)
-      ) {
-        updatedDatetime += '-04:00';
-        db.run(
-          `UPDATE moods SET datetime = ? WHERE id = ?`,
-          [updatedDatetime, row.id],
-          (updateErr) => {
-            if (updateErr) {
-              logger.error(
-                `Error updating datetime for mood ${row.id}:`,
-                updateErr
-              );
-            } else {
-              logger.info(
-                `Updated datetime for mood ${row.id}: ${updatedDatetime}`
-              );
-            }
-          }
-        );
-      }
-    });
-  });
 
   db.run(`
     CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -340,7 +244,9 @@ app.get('/api/user/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT users.name, users.email, users.accountLevel, user_settings.dailyNotifications, user_settings.weeklySummary 
+    `SELECT users.name, users.email, users.accountLevel, 
+     user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
+     user_settings.appDailyNotifications, user_settings.appWeeklySummary
      FROM users 
      LEFT JOIN user_settings ON users.id = user_settings.userId 
      WHERE users.id = ?`,
@@ -359,8 +265,10 @@ app.get('/api/user/settings', authenticateToken, (req, res) => {
         name: row.name,
         email: row.email,
         accountLevel: row.accountLevel,
-        dailyNotifications: row.dailyNotifications === 1,
-        weeklySummary: row.weeklySummary === 1,
+        emailDailyNotifications: row.emailDailyNotifications === 1,
+        emailWeeklySummary: row.emailWeeklySummary === 1,
+        appDailyNotifications: row.appDailyNotifications === 1,
+        appWeeklySummary: row.appWeeklySummary === 1,
       };
 
       logger.info(`User settings fetched for user: ${userId}`);
@@ -375,8 +283,10 @@ app.put(
   authenticateToken,
   [
     body('name').optional().trim().isLength({ min: 1 }),
-    body('dailyNotifications').optional().isBoolean(),
-    body('weeklySummary').optional().isBoolean(),
+    body('emailDailyNotifications').optional().isBoolean(),
+    body('emailWeeklySummary').optional().isBoolean(),
+    body('appDailyNotifications').optional().isBoolean(),
+    body('appWeeklySummary').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -385,7 +295,13 @@ app.put(
     }
 
     const userId = req.user.id;
-    const { name, dailyNotifications, weeklySummary } = req.body;
+    const {
+      name,
+      emailDailyNotifications,
+      emailWeeklySummary,
+      appDailyNotifications,
+      appWeeklySummary,
+    } = req.body;
 
     db.serialize(() => {
       if (name !== undefined) {
@@ -401,20 +317,30 @@ app.put(
         );
       }
 
-      if (dailyNotifications !== undefined || weeklySummary !== undefined) {
-        const updates = [];
-        const values = [];
+      const updates = [];
+      const values = [];
 
-        if (dailyNotifications !== undefined) {
-          updates.push('dailyNotifications = ?');
-          values.push(dailyNotifications ? 1 : 0);
-        }
+      if (emailDailyNotifications !== undefined) {
+        updates.push('emailDailyNotifications = ?');
+        values.push(emailDailyNotifications ? 1 : 0);
+      }
 
-        if (weeklySummary !== undefined) {
-          updates.push('weeklySummary = ?');
-          values.push(weeklySummary ? 1 : 0);
-        }
+      if (emailWeeklySummary !== undefined) {
+        updates.push('emailWeeklySummary = ?');
+        values.push(emailWeeklySummary ? 1 : 0);
+      }
 
+      if (appDailyNotifications !== undefined) {
+        updates.push('appDailyNotifications = ?');
+        values.push(appDailyNotifications ? 1 : 0);
+      }
+
+      if (appWeeklySummary !== undefined) {
+        updates.push('appWeeklySummary = ?');
+        values.push(appWeeklySummary ? 1 : 0);
+      }
+
+      if (updates.length > 0) {
         values.push(userId);
 
         db.run(

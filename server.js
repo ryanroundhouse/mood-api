@@ -75,15 +75,57 @@ db.serialize(() => {
     )
   `);
 
+  // After creating the user_settings table, add these checks
+
   // Check if appDailyNotifications column exists, add if it doesn't
-  db.run(`
-    ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS appDailyNotifications INTEGER DEFAULT 1
-  `);
+  db.get('PRAGMA table_info(user_settings)', (err, rows) => {
+    if (err) {
+      console.error('Error checking table info:', err);
+      return;
+    }
+
+    const appDailyNotificationsExists = rows.some(
+      (row) => row.name === 'appDailyNotifications'
+    );
+
+    if (!appDailyNotificationsExists) {
+      db.run(
+        'ALTER TABLE user_settings ADD COLUMN appDailyNotifications INTEGER DEFAULT 1',
+        (err) => {
+          if (err) {
+            console.error('Error adding appDailyNotifications column:', err);
+          } else {
+            console.log('appDailyNotifications column added successfully');
+          }
+        }
+      );
+    }
+  });
 
   // Check if appWeeklySummary column exists, add if it doesn't
-  db.run(`
-    ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS appWeeklySummary INTEGER DEFAULT 1
-  `);
+  db.get('PRAGMA table_info(user_settings)', (err, rows) => {
+    if (err) {
+      console.error('Error checking table info:', err);
+      return;
+    }
+
+    const appWeeklySummaryExists = rows.some(
+      (row) => row.name === 'appWeeklySummary'
+    );
+
+    if (!appWeeklySummaryExists) {
+      db.run(
+        'ALTER TABLE user_settings ADD COLUMN appWeeklySummary INTEGER DEFAULT 1',
+        (err) => {
+          if (err) {
+            console.error('Error adding appWeeklySummary column:', err);
+          } else {
+            console.log('appWeeklySummary column added successfully');
+          }
+        }
+      );
+    }
+  });
 
   // Create mood_auth_codes table if it doesn't exist
   db.run(`

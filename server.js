@@ -64,66 +64,87 @@ db.serialize(() => {
     )
   `);
 
-  // Rename notifications table to user_settings and add new columns if they don't exist
+  // Rename notifications table to user_settings
   db.run(`
     CREATE TABLE IF NOT EXISTS user_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId INTEGER NOT NULL UNIQUE,
       emailDailyNotifications INTEGER DEFAULT 1,
       emailWeeklySummary INTEGER DEFAULT 1,
+      appDailyNotifications INTEGER DEFAULT 1,
+      appWeeklySummary INTEGER DEFAULT 1,
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
 
-  // After creating the user_settings table, add these checks
-
-  // Check if appDailyNotifications column exists, add if it doesn't
-  db.get('PRAGMA table_info(user_settings)', (err, rows) => {
+  db.all(`PRAGMA table_info(user_settings)`, (err, rows) => {
     if (err) {
-      console.error('Error checking table info:', err);
-      return;
-    }
+      logger.error('Error checking user_settings table schema:', err);
+    } else if (rows && Array.isArray(rows)) {
+      const columnsToRename = [
+        { oldName: 'dailyNotifications', newName: 'emailDailyNotifications' },
+        { oldName: 'weeklySummary', newName: 'emailWeeklySummary' },
+      ];
 
-    const appDailyNotificationsExists = rows.some(
-      (row) => row.name === 'appDailyNotifications'
-    );
-
-    if (!appDailyNotificationsExists) {
-      db.run(
-        'ALTER TABLE user_settings ADD COLUMN appDailyNotifications INTEGER DEFAULT 1',
-        (err) => {
-          if (err) {
-            console.error('Error adding appDailyNotifications column:', err);
-          } else {
-            console.log('appDailyNotifications column added successfully');
-          }
+      columnsToRename.forEach(({ oldName, newName }) => {
+        const columnExists = rows.some((row) => row.name === oldName);
+        if (columnExists) {
+          db.run(
+            `ALTER TABLE user_settings RENAME COLUMN ${oldName} TO ${newName}`,
+            (alterErr) => {
+              if (alterErr) {
+                logger.error(`Error renaming ${oldName} column:`, alterErr);
+              } else {
+                logger.info(
+                  `${oldName} column renamed to ${newName} in user_settings table`
+                );
+              }
+            }
+          );
         }
-      );
-    }
-  });
+      });
 
-  // Check if appWeeklySummary column exists, add if it doesn't
-  db.get('PRAGMA table_info(user_settings)', (err, rows) => {
-    if (err) {
-      console.error('Error checking table info:', err);
-      return;
-    }
+      // Add new columns if they don't exist
+      const columnsToAdd = [
+        { name: 'appDailyNotifications', type: 'INTEGER' },
+        { name: 'appWeeklySummary', type: 'INTEGER' },
+      ];
 
-    const appWeeklySummaryExists = rows.some(
-      (row) => row.name === 'appWeeklySummary'
-    );
-
-    if (!appWeeklySummaryExists) {
-      db.run(
-        'ALTER TABLE user_settings ADD COLUMN appWeeklySummary INTEGER DEFAULT 1',
-        (err) => {
-          if (err) {
-            console.error('Error adding appWeeklySummary column:', err);
-          } else {
-            console.log('appWeeklySummary column added successfully');
-          }
+      columnsToAdd.forEach((column) => {
+        const columnExists = rows.some((row) => row.name === column.name);
+        if (!columnExists) {
+          db.run(
+            `ALTER TABLE user_settings ADD COLUMN ${column.name} ${column.type} DEFAULT 1`,
+            (alterErr) => {
+              if (alterErr) {
+                logger.error(`Error adding ${column.name} column:`, alterErr);
+              } else {
+                logger.info(
+                  `${column.name} column added to user_settings table`
+                );
+                // Set the value to 1 for all existing rows
+                db.run(
+                  `UPDATE user_settings SET ${column.name} = 1`,
+                  (updateErr) => {
+                    if (updateErr) {
+                      logger.error(
+                        `Error updating ${column.name} column:`,
+                        updateErr
+                      );
+                    } else {
+                      logger.info(
+                        `${column.name} column updated for all rows in user_settings table`
+                      );
+                    }
+                  }
+                );
+              }
+            }
+          );
         }
-      );
+      });
+    } else {
+      logger.error('Unexpected result from PRAGMA table_info(user_settings)');
     }
   });
 

@@ -297,8 +297,10 @@ Response:
   "name": "John Doe",
   "email": "user@example.com",
   "accountLevel": "basic",
-  "dailyNotifications": true,
-  "weeklySummary": true
+  "emailDailyNotifications": true,
+  "emailWeeklySummary": true,
+  "appDailyNotifications": true,
+  "appWeeklySummary": true
 }
 ```
 
@@ -311,15 +313,23 @@ Possible errors:
 
 - **PUT** `/api/user/settings`
 
-Request:
+Request body:
 
 ```json
 {
-  "name": "John Smith",
-  "dailyNotifications": false,
-  "weeklySummary": true
+  "name": "John Smith", // Optional
+  "emailDailyNotifications": false, // Optional
+  "emailWeeklySummary": true, // Optional
+  "appDailyNotifications": false, // Optional
+  "appWeeklySummary": true // Optional
 }
 ```
+
+Notes:
+
+- All fields are optional. Only include the fields you want to update.
+- `name` must be a non-empty string if provided.
+- All notification settings (`emailDailyNotifications`, `emailWeeklySummary`, `appDailyNotifications`, `appWeeklySummary`) must be boolean values if provided.
 
 Response:
 
@@ -331,7 +341,7 @@ Response:
 
 Possible errors:
 
-- 400: Validation errors
+- 400: Validation errors (e.g., invalid data types or empty name)
 - 500: Internal server error
 
 ### Get user activities (Pro/Enterprise only)

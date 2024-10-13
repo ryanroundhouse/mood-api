@@ -75,13 +75,6 @@ db.serialize(() => {
     )
   `);
 
-  db.run(`
-    INSERT OR IGNORE INTO user_settings (userId, dailyNotifications, weeklySummary)
-    SELECT userId, dailyNotifications, weeklySummary FROM notifications
-  `);
-
-  db.run(`DROP TABLE IF EXISTS notifications`);
-
   // Create mood_auth_codes table if it doesn't exist
   db.run(`
   CREATE TABLE IF NOT EXISTS mood_auth_codes (

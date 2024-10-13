@@ -64,8 +64,9 @@ db.serialize(() => {
     )
   `);
 
+  // Rename notifications table to user_settings
   db.run(`
-    CREATE TABLE IF NOT EXISTS notifications (
+    CREATE TABLE IF NOT EXISTS user_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId INTEGER NOT NULL UNIQUE,
       dailyNotifications INTEGER DEFAULT 1,
@@ -74,11 +75,13 @@ db.serialize(() => {
     )
   `);
 
-  // Populate notifications table for existing users
   db.run(`
-    INSERT OR IGNORE INTO notifications (userId)
-    SELECT id FROM users
+    INSERT OR IGNORE INTO user_settings (userId, dailyNotifications, weeklySummary)
+    SELECT userId, dailyNotifications, weeklySummary FROM notifications
   `);
+
+  db.run(`DROP TABLE IF EXISTS notifications`);
+
   // Create mood_auth_codes table if it doesn't exist
   db.run(`
   CREATE TABLE IF NOT EXISTS mood_auth_codes (
@@ -344,9 +347,9 @@ app.get('/api/user/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT users.name, users.email, users.accountLevel, notifications.dailyNotifications, notifications.weeklySummary 
+    `SELECT users.name, users.email, users.accountLevel, user_settings.dailyNotifications, user_settings.weeklySummary 
      FROM users 
-     LEFT JOIN notifications ON users.id = notifications.userId 
+     LEFT JOIN user_settings ON users.id = user_settings.userId 
      WHERE users.id = ?`,
     [userId],
     (err, row) => {
@@ -422,7 +425,7 @@ app.put(
         values.push(userId);
 
         db.run(
-          `UPDATE notifications SET ${updates.join(', ')} WHERE userId = ?`,
+          `UPDATE user_settings SET ${updates.join(', ')} WHERE userId = ?`,
           values,
           (err) => {
             if (err) {
@@ -643,13 +646,13 @@ app.post(
 
           // Insert default notification settings for the new user
           db.run(
-            `INSERT INTO notifications (userId) VALUES (?)`,
+            `INSERT INTO user_settings (userId) VALUES (?)`,
             [this.lastID],
-            (notificationErr) => {
-              if (notificationErr) {
+            (settingsErr) => {
+              if (settingsErr) {
                 logger.error(
-                  'Error inserting default notification settings:',
-                  notificationErr
+                  'Error inserting default user settings:',
+                  settingsErr
                 );
               }
             }

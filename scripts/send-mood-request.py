@@ -32,8 +32,8 @@ def get_users_with_notifications():
     cursor.execute("""
         SELECT users.id, users.email 
         FROM users 
-        JOIN notifications ON users.id = notifications.userId 
-        WHERE users.isVerified = 1 AND notifications.dailyNotifications = 1
+        JOIN user_settings ON users.id = user_settings.userId 
+        WHERE users.isVerified = 1 AND user_settings.emailDailyNotifications = 1
     """)
     users = cursor.fetchall()
     conn.close()

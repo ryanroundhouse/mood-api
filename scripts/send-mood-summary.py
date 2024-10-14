@@ -36,10 +36,10 @@ def get_users():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT users.id, users.email, users.accountLevel
+        SELECT users.id, users.email, users.accountLevel, user_settings.emailWeeklySummary
         FROM users 
-        JOIN notifications ON users.id = notifications.userId 
-        WHERE users.isVerified = 1 AND notifications.weeklySummary = 1
+        JOIN user_settings ON users.id = user_settings.userId 
+        WHERE users.isVerified = 1
     """)
     users = cursor.fetchall()
     conn.close()
@@ -459,7 +459,7 @@ def main():
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
     
-    for user_id, email, account_level in users:
+    for user_id, email, account_level, email_weekly_summary in users:
         moods = get_user_moods(user_id, year, month)
         calendar_html = generate_calendar_html(year, month, moods)
         basic_stats = generate_mood_summary(user_id, start_date, end_date)
@@ -485,7 +485,11 @@ def main():
         conn.commit()
         conn.close()
         
-        send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
+        # Only send email if emailWeeklySummary is enabled
+        if email_weekly_summary:
+            send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
+        else:
+            print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
 
 if __name__ == "__main__":
     main()

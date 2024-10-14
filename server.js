@@ -619,8 +619,12 @@ app.get('/api/verify/:token', (req, res) => {
           }
 
           logger.info(`Email verified successfully for user: ${user.email}`);
-          // Redirect to login page with verified=true parameter
-          res.redirect('/login.html?verified=true');
+          // Redirect to login page with verified=true parameter and user's email
+          res.redirect(
+            `/verified.html?verified=true&email=${encodeURIComponent(
+              user.email
+            )}`
+          );
         }
       );
     }

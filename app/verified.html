@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Verified</title>
+    <script>
+      function openApp() {
+        const email = new URLSearchParams(window.location.search).get('email');
+        window.location.href = `moodful://login?verified=true&email=${email}`;
+        setTimeout(() => {
+          window.location.href = `/login.html?verified=true&email=${email}`;
+        }, 1500);
+      }
+    </script>
+  </head>
+  <body onload="openApp()">
+    <h1>Email Verified</h1>
+    <p>Redirecting you to the app...</p>
+  </body>
+</html>

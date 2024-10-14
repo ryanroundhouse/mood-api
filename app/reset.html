@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Password Reset</title>
+    <script>
+      function openApp() {
+        const token = new URLSearchParams(window.location.search).get('token');
+        window.location.href = `moodful://reset-password?token=${token}`;
+        setTimeout(() => {
+          window.location.href = `/reset-password.html?token=${token}`;
+        }, 1500);
+      }
+    </script>
+  </head>
+  <body onload="openApp()">
+    <h1>Email Verified</h1>
+    <p>Redirecting you to the app...</p>
+  </body>
+</html>

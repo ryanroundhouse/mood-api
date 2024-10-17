@@ -135,6 +135,13 @@
           background-color: #e8e8e8;
         }
       }
+
+      .data-deletion-note {
+        font-size: 0.9em;
+        color: #666;
+        margin-bottom: 15px;
+        font-style: italic;
+      }
     </style>
     <script src="https://www.google.com/recaptcha/api.js?render=6LemNFYqAAAAAOLKr63x6MWvHsrL9oJWUTkllXdW"></script>
   </head>
@@ -178,6 +185,11 @@
 
           <label for="message">Message:</label>
           <textarea id="message" name="message" required></textarea>
+
+          <p class="data-deletion-note">
+            To request data deletion, please use the email address associated
+            with your account.
+          </p>
 
           <button type="submit">Send Message</button>
         </form>

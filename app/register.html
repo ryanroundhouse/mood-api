@@ -225,7 +225,7 @@
           <label for="pro">Pro Account</label>
         </div>
 
-        <div id="payment-section">
+        <div id="payment-section" style="display: none;">
           <div id="card-element">
             <!-- A Stripe Element will be inserted here. -->
           </div>
@@ -308,20 +308,20 @@
         });
 
       // Toggle card element visibility based on account type selection
-      document
-        .querySelectorAll('input[name="accountType"]')
-        .forEach((radio) => {
-          radio.addEventListener('change', (event) => {
-            const cardElementContainer = document.getElementById(
-              'card-element-container'
-            );
-            if (event.target.value === 'pro') {
-              cardElementContainer.style.display = 'block';
-            } else {
-              cardElementContainer.style.display = 'none';
-            }
-          });
+      document.querySelectorAll('input[name="accountType"]').forEach((radio) => {
+        radio.addEventListener('change', (event) => {
+          const paymentSection = document.getElementById('payment-section');
+          if (event.target.value === 'pro') {
+            paymentSection.style.display = 'block';
+          } else {
+            paymentSection.style.display = 'none';
+          }
         });
+      });
+
+      // Initialize the payment section visibility based on the default selection
+      const defaultAccountType = document.querySelector('input[name="accountType"]:checked').value;
+      document.getElementById('payment-section').style.display = defaultAccountType === 'pro' ? 'block' : 'none';
 
       // Add this at the end of your script
       const hamburgerMenu = document.querySelector('.hamburger-menu');

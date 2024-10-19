@@ -135,10 +135,29 @@
           padding-left: 10px;
         }
       }
+
+      /* Add these new styles for the alert banner */
+      .alert-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        z-index: 1000;
+        display: none;
+      }
+
+      .alert-banner.error {
+        background-color: #f44336;
+      }
     </style>
   </head>
   <body>
     <header>
+      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -196,6 +215,18 @@
         unauthenticatedApiCall,
       } from './api-script.js';
 
+      // Add this function to show temporary alert banners
+      function showAlertBanner(message, isError = false) {
+        const banner = document.getElementById('alertBanner');
+        banner.textContent = message;
+        banner.classList.toggle('error', isError);
+        banner.style.display = 'block';
+
+        setTimeout(() => {
+          banner.style.display = 'none';
+        }, 3000);
+      }
+
       // Check if user is logged in
       const accessToken = localStorage.getItem('accessToken');
       const refreshToken = localStorage.getItem('refreshToken');
@@ -211,6 +242,9 @@
             await unauthenticatedApiCall('/api/logout', 'POST', {
               refreshToken,
             });
+          } catch (error) {
+            console.error('Logout error:', error);
+            showAlertBanner('Error during logout. Please try again.', true);
           } finally {
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
@@ -235,7 +269,7 @@
           }
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to fetch weekly summary. Please try again.');
+          showAlertBanner('Failed to fetch weekly summary. Please try again.', true);
         }
       }
 

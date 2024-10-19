@@ -212,11 +212,30 @@
         vertical-align: middle;
         margin-left: 5px;
       }
+
+      /* Add these new styles for the alert banner */
+      .alert-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        z-index: 1000;
+        display: none;
+      }
+
+      .alert-banner.error {
+        background-color: #f44336;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
   <body>
     <header>
+      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -298,6 +317,18 @@
       const cardElement = elements.create('card');
       cardElement.mount('#card-element');
 
+      // Add this function to show temporary alert banners
+      function showAlertBanner(message, isError = false) {
+        const banner = document.getElementById('alertBanner');
+        banner.textContent = message;
+        banner.classList.toggle('error', isError);
+        banner.style.display = 'block';
+
+        setTimeout(() => {
+          banner.style.display = 'none';
+        }, 3000);
+      }
+
       document
         .getElementById('registerForm')
         .addEventListener('submit', async (e) => {
@@ -337,13 +368,13 @@
               }
             );
 
-            alert(
-              'Registration successful! Please check your email to verify your account.'
-            );
-            window.location.href = 'login.html';
+            showAlertBanner('Registration successful! Please check your email to verify your account.');
+            setTimeout(() => {
+              window.location.href = 'login.html';
+            }, 3000);
           } catch (error) {
             console.error('Error:', error);
-            alert(error.message || 'An error occurred. Please try again.');
+            showAlertBanner(error.message || 'An error occurred. Please try again.', true);
           }
         });
 

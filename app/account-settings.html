@@ -254,11 +254,30 @@
       .switch-label {
         margin-left: 70px;
       }
+
+      /* Add these new styles for the alert banner */
+      .alert-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        z-index: 1000;
+        display: none;
+      }
+
+      .alert-banner.error {
+        background-color: #f44336;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
   <body>
     <header>
+      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -369,6 +388,18 @@
 
       // Remove the refreshAccessToken function as it's now handled by makeApiCall
 
+      // Add this function to show temporary alert banners
+      function showAlertBanner(message, isError = false) {
+        const banner = document.getElementById('alertBanner');
+        banner.textContent = message;
+        banner.classList.toggle('error', isError);
+        banner.style.display = 'block';
+
+        setTimeout(() => {
+          banner.style.display = 'none';
+        }, 3000);
+      }
+
       // Modify the fetchUserSettings function
       async function fetchUserSettings() {
         try {
@@ -416,7 +447,7 @@
           }
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to fetch user settings. Please try again.');
+          showAlertBanner('Failed to fetch user settings. Please try again.', true);
         }
       }
 
@@ -430,9 +461,10 @@
             [setting]: value,
           });
           console.log(`${setting} updated successfully!`);
+          showAlertBanner(`${setting} updated successfully!`);
         } catch (error) {
           console.error('Error:', error);
-          alert(`Failed to update ${setting}. Please try again.`);
+          showAlertBanner(`Failed to update ${setting}. Please try again.`, true);
           // Revert the toggle if the update failed
           event.target.checked = !value;
         }
@@ -459,7 +491,7 @@
           linkElement.click();
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to export mood data. Please try again.');
+          showAlertBanner('Failed to export mood data. Please try again.', true);
         }
       }
 
@@ -500,7 +532,7 @@
           updateActivitiesList(activities);
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to fetch custom activities. Please try again.');
+          showAlertBanner('Failed to fetch custom activities. Please try again.', true);
         }
       }
 
@@ -535,9 +567,10 @@
             );
             updateActivitiesList(data.activities);
             document.getElementById('newActivity').value = '';
+            showAlertBanner('Activity added successfully!');
           } catch (error) {
             console.error('Error:', error);
-            alert('Failed to add activity. Please try again.');
+            showAlertBanner('Failed to add activity. Please try again.', true);
           }
         }
       }
@@ -555,9 +588,10 @@
             }
           );
           updateActivitiesList(data.activities);
+          showAlertBanner('Activity deleted successfully!');
         } catch (error) {
           console.error('Error:', error);
-          alert('Failed to delete activity. Please try again.');
+          showAlertBanner('Failed to delete activity. Please try again.', true);
         }
       }
 
@@ -628,11 +662,11 @@
                 paymentMethodId,
               }
             );
-            alert('Your account has been upgraded to Pro!');
+            showAlertBanner('Your account has been upgraded to Pro!');
             // Optionally, you can redirect the user or update the UI to reflect the new account status
           } catch (error) {
             console.error('Error during upgrade:', error);
-            alert('An error occurred. Please try again.');
+            showAlertBanner('An error occurred during upgrade. Please try again.', true);
           }
         });
 
@@ -647,12 +681,12 @@
           if (confirmDowngrade) {
             try {
               await authenticatedApiCall('/api/downgrade', 'POST');
-              alert('Your account has been downgraded.');
+              showAlertBanner('Your account has been downgraded.');
               // Optionally, you can redirect the user or update the UI to reflect the new account status
               window.location.reload();
             } catch (error) {
               console.error('Error during downgrade:', error);
-              alert('An error occurred. Please try again.');
+              showAlertBanner('An error occurred during downgrade. Please try again.', true);
             }
           }
         });

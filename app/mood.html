@@ -160,10 +160,29 @@
           padding-left: 10px;
         }
       }
+
+      /* Add these new styles for the alert banner */
+      .alert-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        z-index: 1000;
+        display: none;
+      }
+
+      .alert-banner.error {
+        background-color: #f44336;
+      }
     </style>
   </head>
   <body>
     <header>
+      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -324,13 +343,25 @@
         });
       });
 
+      // Add this function to show temporary alert banners
+      function showAlertBanner(message, isError = false) {
+        const banner = document.getElementById('alertBanner');
+        banner.textContent = message;
+        banner.classList.toggle('error', isError);
+        banner.style.display = 'block';
+
+        setTimeout(() => {
+          banner.style.display = 'none';
+        }, 3000);
+      }
+
       // Modify the mood submission functionality
       document
         .getElementById('submitMood')
         .addEventListener('click', async () => {
           const selectedMood = document.querySelector('.mood-option.selected');
           if (!selectedMood) {
-            alert('Please select a mood before submitting.');
+            showAlertBanner('Please select a mood before submitting.', true);
             return;
           }
 
@@ -349,11 +380,13 @@
               activities: selectedActivities,
             });
 
-            alert('Mood submitted successfully!');
-            window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
+            showAlertBanner('Mood submitted successfully!');
+            setTimeout(() => {
+              window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
+            }, 1000); // Wait for 1 second before redirecting
           } catch (error) {
             console.error('Error:', error);
-            alert('Failed to submit mood. Please try again.');
+            showAlertBanner('Failed to submit mood. Please try again.', true);
           }
         });
 

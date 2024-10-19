@@ -79,11 +79,6 @@ nav ul li a {
   background: #f9f9f9;
 }
 
-.feature-card {
-  text-align: center;
-  max-width: 300px;
-}
-
 .feature-card img {
   width: 80px;
   margin-bottom: 20px;
@@ -98,33 +93,43 @@ nav ul li a {
   font-size: 1rem;
 }
 
-/* Responsive Styles */
-@media (max-width: 768px) {
+@font-face {
+  font-family: 'RythmusRegular';
+  src: url('/font/RythmusRegular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.hero {
+  font-family: 'RythmusRegular', sans-serif;
+}
+
+/* Default styles for smaller screens */
+.hero {
+  padding: 10px 20px;
+}
+
+.hero h1 {
+  font-size: 3rem;
+}
+
+.hero p {
+  font-size: 1.5rem;
+}
+
+/* Double font size for medium and large screens */
+@media (min-width: 768px) {
+  .hero {
+    padding: 20px 40px; /* Adjust padding for larger screens if needed */
+  }
+
   .hero h1 {
-    font-size: 2rem;
+    font-size: 4rem; /* Doubled from default size */
   }
 
   .hero p {
-    font-size: 1rem;
+    font-size: 2rem; /* Doubled from default size */
   }
-
-  .features {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .feature-card {
-    margin-bottom: 20px;
-  }
-}
-
-.dashboard-hero h1 {
-  font-size: 2.5rem;
-  margin-bottom: 20px;
-}
-
-.dashboard-hero p {
-  font-size: 1.2rem;
 }
 
 .dashboard-container {

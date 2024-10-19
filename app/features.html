@@ -39,18 +39,6 @@
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
     <style>
-      .features-hero h1 {
-        font-size: 2.5em;
-        margin-bottom: 20px;
-      }
-      .features-hero p {
-        font-size: 1.2em;
-        max-width: 800px;
-        margin: 0 auto;
-      }
-      .features-content {
-        padding: 40px 20px;
-      }
       .content-wrapper {
         max-width: 1200px;
         margin: 0 auto;
@@ -66,20 +54,27 @@
         padding: 20px;
         margin-bottom: 20px;
         text-align: center;
+        max-width: 300px;
       }
       .feature-card h2 {
         color: #333;
         margin-bottom: 15px;
-        font-size: 1.5em; /* Increased font size for titles */
+        font-size: 1.5em;
       }
       .feature-card p {
         color: #666;
         line-height: 1.6;
-        font-size: 1em; /* Default font size for costs */
+        font-size: 1em;
       }
       @media (max-width: 768px) {
         .feature-card {
           flex-basis: 100%;
+          margin-left: 0;
+          margin-right: 0;
+          max-width: none;
+        }
+        .content-wrapper {
+          padding: 0 10px;
         }
       }
       footer {

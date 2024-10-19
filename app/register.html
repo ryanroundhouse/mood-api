@@ -54,6 +54,7 @@
         color: #333;
       }
       .register-form label {
+        width: 100%;
         display: block;
         margin-bottom: 5px;
         color: #555;
@@ -64,6 +65,7 @@
         margin-bottom: 15px;
         border: 1px solid #ddd;
         border-radius: 4px;
+        box-sizing: border-box;
       }
       .register-form #card-element {
         margin-top: 20px;
@@ -124,6 +126,18 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      .register-form .radio-group input[type="radio"] {
+        width: 20%;
+        margin: 0;
+      }
+
+      .register-form .radio-group label {
+        margin: 0;
+        display: flex;
+        align-items: center;
       }
 
       /* Hamburger menu styles */
@@ -176,6 +190,28 @@
           background-color: #e8e8e8;
         }
       }
+
+      /* New styles for the payment section */
+      #payment-section {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 20px;
+      }
+
+      #payment-section label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: bold;
+        color: #333;
+      }
+
+      /* Stripe logo styles */
+      .stripe-logo {
+        height: 20px;
+        vertical-align: middle;
+        margin-left: 5px;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -218,14 +254,18 @@
         <label>Account Type:</label>
         <div class="radio-group">
           <input type="radio" id="free" name="accountType" value="free" />
-          <label for="free">Free Account</label>
+          <label for="free">Free Account (Upgrade later)</label>
         </div>
         <div class="radio-group">
           <input type="radio" id="pro" name="accountType" value="pro" checked />
-          <label for="pro">Pro Account</label>
+          <label for="pro">Pro Account (<a href="pricing.html">$4.99 per month</a>)</label>
         </div>
 
         <div id="payment-section" style="display: none;">
+          <label>
+            Pay with Stripe
+            <img src="https://stripe.com/img/v3/home/twitter.png" alt="Stripe" class="stripe-logo">
+          </label>
           <div id="card-element">
             <!-- A Stripe Element will be inserted here. -->
           </div>

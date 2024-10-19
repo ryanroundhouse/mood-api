@@ -271,6 +271,59 @@
         cursor: pointer;
         font-weight: bold;
       }
+
+      .bubble-title {
+        font-size: 1.2rem;
+        margin-bottom: 10px;
+      }
+
+      .bubble-multiselect {
+        width: 200px;
+        margin: 20px auto;
+      }
+
+      .bubble-selectBox {
+        position: relative;
+      }
+
+      .bubble-checkboxes {
+        display: none;
+        border: 1px #dadada solid;
+      }
+
+      .bubble-checkbox-label {
+        display: block;
+      }
+
+      .bubble-checkbox-label:hover {
+        background-color: #1e90ff;
+      }
+
+      .bubble-comment-box {
+        width: 100%;
+        height: 100px;
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        resize: vertical;
+      }
+
+      .bubble-submit-btn {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        font-size: 1rem;
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .bubble-submit-btn:hover {
+        background-color: #5a79bc;
+      }
     </style>
   </head>
   <body>
@@ -541,8 +594,12 @@
               comment: mood.comment || 'No comment',
               activities: activities.join(', ') || 'None',
             });
+          }
 
-            // Add click event listener
+          // Modify this part to allow clicking on the current day
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (dayDate <= today) {
             dayDiv.addEventListener('click', showMoodBubble);
           }
 
@@ -719,15 +776,53 @@
 
       // Add this new function
       function showMoodBubble(event) {
-        const moodData = JSON.parse(event.target.dataset.mood);
+        const moodData = JSON.parse(event.target.dataset.mood || '{}');
+        const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), parseInt(event.target.textContent));
         const bubble = document.createElement('div');
         bubble.classList.add('mood-bubble');
-        bubble.innerHTML = `
-          <span class="mood-bubble-close">&times;</span>
-          <p><strong>Mood:</strong> ${moodData.rating}</p>
-          <p><strong>Comment:</strong> ${moodData.comment}</p>
-          <p><strong>Activities:</strong> ${moodData.activities}</p>
-        `;
+
+        const isToday = clickedDate.toDateString() === new Date().toDateString();
+
+        if (Object.keys(moodData).length === 0 && isToday) {
+          // No mood data for today, show mood submission form
+          bubble.innerHTML = `
+            <span class="mood-bubble-close">&times;</span>
+            <h3 class="bubble-title">Submit Mood for Today</h3>
+            <div class="mood-options">
+              <span class="mood-option" data-rating="0">😢</span>
+              <span class="mood-option" data-rating="1">😕</span>
+              <span class="mood-option" data-rating="2">😐</span>
+              <span class="mood-option" data-rating="3">🙂</span>
+              <span class="mood-option" data-rating="4">😄</span>
+            </div>
+            <div class="bubble-multiselect">
+              <div class="bubble-selectBox" onclick="showBubbleCheckboxes(this)">
+                <select>
+                  <option>Select activities</option>
+                </select>
+                <div class="overSelect"></div>
+              </div>
+              <div id="bubbleCheckboxes" class="bubble-checkboxes"></div>
+            </div>
+            <textarea id="bubbleCommentBox" class="bubble-comment-box" placeholder="Optional: Add a comment about your mood" maxlength="500"></textarea>
+            <button id="bubbleSubmitMood" class="bubble-submit-btn">Submit Mood</button>
+          `;
+        } else if (Object.keys(moodData).length === 0) {
+          // No mood data for past day
+          bubble.innerHTML = `
+            <span class="mood-bubble-close">&times;</span>
+            <p>No mood data available for ${clickedDate.toDateString()}</p>
+          `;
+        } else {
+          // Existing mood data, show mood details
+          bubble.innerHTML = `
+            <span class="mood-bubble-close">&times;</span>
+            <p><strong>Date:</strong> ${clickedDate.toDateString()}</p>
+            <p><strong>Mood:</strong> ${moodData.rating}</p>
+            <p><strong>Comment:</strong> ${moodData.comment}</p>
+            <p><strong>Activities:</strong> ${moodData.activities}</p>
+          `;
+        }
 
         document.body.appendChild(bubble);
 
@@ -757,11 +852,9 @@
         bubble.style.top = `${top}px`;
 
         // Add close functionality
-        bubble
-          .querySelector('.mood-bubble-close')
-          .addEventListener('click', () => {
-            document.body.removeChild(bubble);
-          });
+        bubble.querySelector('.mood-bubble-close').addEventListener('click', () => {
+          document.body.removeChild(bubble);
+        });
 
         // Close bubble when clicking outside
         document.addEventListener('click', function closeBubble(e) {
@@ -770,7 +863,96 @@
             document.removeEventListener('click', closeBubble);
           }
         });
+
+        if (Object.keys(moodData).length === 0 && isToday) {
+          // Set up mood submission form functionality for today
+          const moodOptions = bubble.querySelectorAll('.mood-option');
+          moodOptions.forEach(option => {
+            option.addEventListener('click', () => {
+              moodOptions.forEach(opt => opt.classList.remove('selected'));
+              option.classList.add('selected');
+            });
+          });
+
+          // Fetch and populate activities
+          fetchCustomActivities().then(activities => {
+            updateBubbleActivitiesCombobox(activities, bubble.querySelector('#bubbleCheckboxes'));
+          });
+
+          // Set up mood submission
+          bubble.querySelector('#bubbleSubmitMood').addEventListener('click', () => {
+            const selectedMood = bubble.querySelector('.mood-option.selected');
+            if (!selectedMood) {
+              alert('Please select a mood before submitting.');
+              return;
+            }
+
+            const rating = selectedMood.getAttribute('data-rating');
+            const comment = bubble.querySelector('#bubbleCommentBox').value;
+            const selectedActivities = Array.from(
+              bubble.querySelectorAll('#bubbleCheckboxes input:checked')
+            ).map(checkbox => checkbox.value);
+
+            submitMood(clickedDate, rating, comment, selectedActivities, bubble);
+          });
+        }
       }
+
+      function submitMood(date, rating, comment, activities, bubble) {
+        authenticatedApiCall('/api/mood', 'POST', {
+          datetime: date.toISOString(),
+          rating: parseInt(rating),
+          comment: comment,
+          activities: activities,
+        })
+          .then(() => {
+            alert('Mood submitted successfully!');
+            document.body.removeChild(bubble);
+            fetchMoodEntries(); // Refresh the mood entries
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to submit mood. Please try again.');
+          });
+      }
+
+      // Add this new function for updating the bubble's activities combobox
+      function updateBubbleActivitiesCombobox(customActivities, checkboxesContainer) {
+        checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
+
+        const activities = customActivities || [
+          'Good Sleep',
+          'Worked Out',
+          'Sports',
+          'Social',
+          'Rested',
+        ];
+
+        activities.forEach((activity) => {
+          const label = document.createElement('label');
+          label.classList.add('bubble-checkbox-label');
+
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.id = `bubble-${activity.toLowerCase().replace(/\s+/g, '-')}`;
+          input.value = activity.toLowerCase();
+          input.classList.add('bubble-checkbox');
+
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(activity));
+          checkboxesContainer.appendChild(label);
+        });
+      }
+
+      // Add this new function for showing/hiding the bubble's checkboxes
+      window.showBubbleCheckboxes = function(selectBox) {
+        const checkboxes = selectBox.parentNode.querySelector('#bubbleCheckboxes');
+        if (checkboxes.style.display === 'none') {
+          checkboxes.style.display = 'block';
+        } else {
+          checkboxes.style.display = 'none';
+        }
+      };
     </script>
   </body>
 </html>

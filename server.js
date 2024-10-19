@@ -685,7 +685,7 @@ app.post(
   '/api/mood',
   authenticateToken,
   [
-    body('datetime').optional().isISO8601().toDate(),
+    body('datetime').optional().isISO8601(),
     body('rating').isInt({ min: 0, max: 5 }),
     body('comment').optional().isString().trim().isLength({ max: 500 }),
     body('activities').optional().isArray(),
@@ -700,12 +700,12 @@ app.post(
     let { datetime, rating, comment, activities } = req.body;
     const userId = req.user.id;
 
-    // If no datetime is supplied, use current EST datetime
+    // If datetime is not provided, use current EST datetime
     if (!datetime) {
       datetime = getCurrentESTDateTime();
     } else {
-      // Convert provided datetime to EST
-      datetime = convertToEST(datetime);
+      // If datetime is provided, parse it and convert to EST
+      datetime = convertToEST(new Date(datetime).toISOString());
     }
 
     // Convert activities array to JSON string
@@ -748,6 +748,15 @@ app.post(
             }
           );
         } else {
+          // Log all values before inserting
+          logger.info(`Inserting mood with values:
+            userId: ${userId}
+            datetime: ${datetime}
+            rating: ${rating}
+            comment: ${comment}
+            activities: ${activitiesJson}
+          `);
+
           db.run(
             `INSERT INTO moods (userId, datetime, rating, comment, activities) VALUES (?, ?, ?, ?, ?)`,
             [userId, datetime, rating, comment, activitiesJson],

@@ -243,6 +243,18 @@
       <button id="submitMood">Submit Mood</button>
     </section>
 
+    <script>
+      // Add this function outside the module to make it globally accessible
+      function showCheckboxes() {
+        var checkboxes = document.getElementById('checkboxes');
+        if (checkboxes.style.display === 'none' || checkboxes.style.display === '') {
+          checkboxes.style.display = 'block';
+        } else {
+          checkboxes.style.display = 'none';
+        }
+      }
+    </script>
+
     <script type="module">
       import { unauthenticatedApiCall } from './api-script.js';
 
@@ -266,6 +278,8 @@
 
       // Add this function to update the activities combobox
       function updateActivitiesCombobox(customActivities) {
+        
+        
         const checkboxesContainer = document.getElementById('checkboxes');
         checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
 
@@ -287,6 +301,7 @@
           label.appendChild(input);
           label.appendChild(document.createTextNode(activity));
           checkboxesContainer.appendChild(label);
+          console.log(checkboxesContainer);
         });
       }
 
@@ -344,17 +359,6 @@
         });
 
       let expanded = false;
-
-      function showCheckboxes() {
-        var checkboxes = document.getElementById('checkboxes');
-        if (!expanded) {
-          checkboxes.style.display = 'block';
-          expanded = true;
-        } else {
-          checkboxes.style.display = 'none';
-          expanded = false;
-        }
-      }
 
       // Add this at the end of your script
       const hamburgerMenu = document.querySelector('.hamburger-menu');

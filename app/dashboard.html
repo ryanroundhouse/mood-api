@@ -596,10 +596,10 @@
             });
           }
 
-          // Modify this part to allow clicking on the current day
+          // Only add click event listener for dates up to and including today
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          if (dayDate <= today) {
+          if (dayDate < today) {
             dayDiv.addEventListener('click', showMoodBubble);
           }
 
@@ -777,17 +777,18 @@
       // Add this new function
       function showMoodBubble(event) {
         const moodData = JSON.parse(event.target.dataset.mood || '{}');
-        const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), parseInt(event.target.textContent));
+        const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), parseInt(event.target.textContent), 12);
         const bubble = document.createElement('div');
         bubble.classList.add('mood-bubble');
 
-        const isToday = clickedDate.toDateString() === new Date().toDateString();
+        
+        console.log(Object.keys(moodData).length === 0);
 
-        if (Object.keys(moodData).length === 0 && isToday) {
-          // No mood data for today, show mood submission form
+        if (Object.keys(moodData).length === 0) {
+          // No mood data, show mood submission form
           bubble.innerHTML = `
             <span class="mood-bubble-close">&times;</span>
-            <h3 class="bubble-title">Submit Mood for Today</h3>
+            <h3 class="bubble-title">Submit Mood for ${clickedDate.toDateString()}</h3>
             <div class="mood-options">
               <span class="mood-option" data-rating="0">😢</span>
               <span class="mood-option" data-rating="1">😕</span>
@@ -806,12 +807,6 @@
             </div>
             <textarea id="bubbleCommentBox" class="bubble-comment-box" placeholder="Optional: Add a comment about your mood" maxlength="500"></textarea>
             <button id="bubbleSubmitMood" class="bubble-submit-btn">Submit Mood</button>
-          `;
-        } else if (Object.keys(moodData).length === 0) {
-          // No mood data for past day
-          bubble.innerHTML = `
-            <span class="mood-bubble-close">&times;</span>
-            <p>No mood data available for ${clickedDate.toDateString()}</p>
           `;
         } else {
           // Existing mood data, show mood details
@@ -864,8 +859,8 @@
           }
         });
 
-        if (Object.keys(moodData).length === 0 && isToday) {
-          // Set up mood submission form functionality for today
+        if (Object.keys(moodData).length === 0) {
+          // Set up mood submission form functionality
           const moodOptions = bubble.querySelectorAll('.mood-option');
           moodOptions.forEach(option => {
             option.addEventListener('click', () => {

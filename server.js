@@ -717,6 +717,8 @@ app.post(
     const endOfDay = new Date(datetime);
     endOfDay.setHours(23, 59, 59, 999);
 
+
+    logger.info(`Searching by date: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
     db.get(
       `SELECT * FROM moods WHERE userId = ? AND datetime >= ? AND datetime <= ?`,
       [userId, startOfDay.toISOString(), endOfDay.toISOString()],
@@ -727,6 +729,16 @@ app.post(
         }
 
         if (mood) {
+          console.log('mood', mood);
+          // Log out the values going into the SQL statement
+          logger.info(`Updating mood with values:
+            datetime: ${datetime}
+            rating: ${rating}
+            comment: ${comment}
+            activities: ${activitiesJson}
+            id: ${mood.id}
+          `);
+
           db.run(
             `UPDATE moods SET datetime = ?, rating = ?, comment = ?, activities = ? WHERE id = ?`,
             [datetime, rating, comment, activitiesJson, mood.id],

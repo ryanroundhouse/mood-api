@@ -343,6 +343,35 @@
       .alert-banner.error {
         background-color: #f44336; /* Red for error */
       }
+
+      /* Add these new styles */
+      .activity-highlight {
+        margin-top: 20px;
+        text-align: center;
+      }
+
+      .activity-button {
+        margin: 5px;
+        padding: 5px 10px;
+        background-color: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .activity-button.active {
+        background-color: #6a89cc;
+        color: white;
+      }
+
+      .calendar-day.highlight {
+        border: 2px solid red;
+      }
+
+      /* Add this new style for the current day */
+      .calendar-day.current-day {
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
@@ -461,6 +490,12 @@
           <span>Very Happy</span>
         </div>
       </div>
+      
+      <!-- Add this new section for activity highlighting -->
+      <div class="activity-highlight">
+        <h3>Highlight Activity</h3>
+        <div id="activityButtons"></div>
+      </div>
     </section>
 
     <script type="module">
@@ -493,6 +528,66 @@
 
       let expanded = false;
 
+      let activities = [];
+      let selectedActivity = null;
+
+      // Modify the fetchCustomActivities function
+      async function fetchCustomActivities() {
+        try {
+          const response = await authenticatedApiCall('/api/user/activities', 'GET');
+          activities = response.activities.length > 0
+            ? response.activities
+            : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
+          return activities;
+        } catch (error) {
+          console.error('Error:', error);
+          return null;
+        }
+      }
+
+      // Add this new function to create activity buttons
+      function createActivityButtons() {
+        const buttonContainer = document.getElementById('activityButtons');
+        buttonContainer.innerHTML = '';
+
+        activities.forEach(activity => {
+          const button = document.createElement('button');
+          button.textContent = activity;
+          button.classList.add('activity-button');
+          button.addEventListener('click', () => toggleActivityHighlight(activity));
+          buttonContainer.appendChild(button);
+        });
+      }
+
+      // Add this new function to toggle activity highlighting
+      function toggleActivityHighlight(activity) {
+        const buttons = document.querySelectorAll('.activity-button');
+        buttons.forEach(button => button.classList.remove('active'));
+
+        if (selectedActivity === activity) {
+          selectedActivity = null;
+        } else {
+          selectedActivity = activity;
+          document.querySelector(`.activity-button:nth-child(${activities.indexOf(activity) + 1})`).classList.add('active');
+        }
+
+        highlightActivityDays();
+      }
+
+      // Add this new function to highlight days with the selected activity
+      function highlightActivityDays() {
+        const calendarDays = document.querySelectorAll('.calendar-day');
+        calendarDays.forEach(day => {
+          day.classList.remove('highlight');
+          if (selectedActivity && day.dataset.mood) {
+            const moodData = JSON.parse(day.dataset.mood);
+            if (moodData.activities.toLowerCase().includes(selectedActivity.toLowerCase())) {
+              day.classList.add('highlight');
+            }
+          }
+        });
+      }
+
       // Modify the fetchMoodEntries function
       async function fetchMoodEntries() {
         try {
@@ -502,28 +597,12 @@
           ]);
 
           updateActivitiesCombobox(activitiesResponse);
+          createActivityButtons(); // Add this line to create activity buttons
           preSelectTodayMood(moodResponse);
           displayCalendar(moodResponse);
         } catch (error) {
           console.error('Error:', error);
           showAlertBanner('Failed to fetch mood entries. Please try again.', true);
-        }
-      }
-
-      // Modify the fetchCustomActivities function
-      async function fetchCustomActivities() {
-        try {
-          const response = await authenticatedApiCall(
-            '/api/user/activities',
-            'GET'
-          );
-
-          return response.activities.length > 0
-            ? response.activities
-            : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
-        } catch (error) {
-          console.error('Error:', error);
-          return null;
         }
       }
 
@@ -616,9 +695,17 @@
             });
           }
 
-          // Only add click event listener for dates up to and including today
+          // Add this block to check if it's the current day
           const today = new Date();
           today.setHours(0, 0, 0, 0);
+          if (
+            dayDate.getDate() === today.getDate() &&
+            dayDate.getMonth() === today.getMonth() &&
+            dayDate.getFullYear() === today.getFullYear()
+          ) {
+            dayDiv.classList.add('current-day');
+          }
+
           if (dayDate < today) {
             dayDiv.addEventListener('click', showMoodBubble);
           }
@@ -628,6 +715,9 @@
 
         // Update navigation buttons
         updateNavigationButtons();
+
+        // Add this line to highlight activities after calendar is displayed
+        highlightActivityDays();
       }
 
       function updateNavigationButtons() {

@@ -717,8 +717,9 @@ app.post(
     const endOfDay = new Date(datetime);
     endOfDay.setHours(23, 59, 59, 999);
 
-
-    logger.info(`Searching by date: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
+    logger.info(
+      `Searching by date: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`
+    );
     db.get(
       `SELECT * FROM moods WHERE userId = ? AND datetime >= ? AND datetime <= ?`,
       [userId, startOfDay.toISOString(), endOfDay.toISOString()],
@@ -914,7 +915,20 @@ app.get(
           return res.status(500).json({ error: 'Internal server error' });
         }
 
-        const activities = row ? JSON.parse(row.activities) : [];
+        let activities;
+        if (row && row.activities) {
+          activities = JSON.parse(row.activities);
+        } else {
+          // Default activities if no custom activities are found
+          activities = [
+            'good sleep',
+            'worked out',
+            'sports',
+            'social',
+            'rested',
+          ];
+        }
+
         res.json({ activities });
       }
     );

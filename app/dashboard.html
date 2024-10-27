@@ -39,7 +39,6 @@
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
     <style>
-
       @media (min-width: 1024px) {
         .dashboard-container {
           width: 33.33%;
@@ -332,7 +331,7 @@
         top: 0;
         left: 0;
         right: 0;
-        background-color: #4CAF50; /* Green for success */
+        background-color: #4caf50; /* Green for success */
         color: white;
         padding: 10px;
         text-align: center;
@@ -377,7 +376,9 @@
   <body>
     <header>
       <div id="alertBanner" class="alert-banner"></div>
-      <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
+      <a href="index.html"
+        ><img src="img/logo.png" alt="Moodful Logo" class="logo"
+      /></a>
       <nav>
         <div class="hamburger-menu">
           <span></span>
@@ -490,7 +491,7 @@
           <span>Very Happy</span>
         </div>
       </div>
-      
+
       <!-- Add this new section for activity highlighting -->
       <div class="activity-highlight">
         <h3>Highlight Activity</h3>
@@ -534,14 +535,15 @@
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
         try {
-          const response = await authenticatedApiCall('/api/user/activities', 'GET');
-          activities = response.activities.length > 0
-            ? response.activities
-            : ['good sleep', 'worked out', 'sports', 'social', 'rested'];
+          const response = await authenticatedApiCall(
+            '/api/user/activities',
+            'GET'
+          );
+          activities = response.activities;
           return activities;
         } catch (error) {
           console.error('Error:', error);
-          return null;
+          return [];
         }
       }
 
@@ -550,11 +552,13 @@
         const buttonContainer = document.getElementById('activityButtons');
         buttonContainer.innerHTML = '';
 
-        activities.forEach(activity => {
+        activities.forEach((activity) => {
           const button = document.createElement('button');
           button.textContent = activity;
           button.classList.add('activity-button');
-          button.addEventListener('click', () => toggleActivityHighlight(activity));
+          button.addEventListener('click', () =>
+            toggleActivityHighlight(activity)
+          );
           buttonContainer.appendChild(button);
         });
       }
@@ -562,13 +566,17 @@
       // Add this new function to toggle activity highlighting
       function toggleActivityHighlight(activity) {
         const buttons = document.querySelectorAll('.activity-button');
-        buttons.forEach(button => button.classList.remove('active'));
+        buttons.forEach((button) => button.classList.remove('active'));
 
         if (selectedActivity === activity) {
           selectedActivity = null;
         } else {
           selectedActivity = activity;
-          document.querySelector(`.activity-button:nth-child(${activities.indexOf(activity) + 1})`).classList.add('active');
+          document
+            .querySelector(
+              `.activity-button:nth-child(${activities.indexOf(activity) + 1})`
+            )
+            .classList.add('active');
         }
 
         highlightActivityDays();
@@ -577,11 +585,15 @@
       // Add this new function to highlight days with the selected activity
       function highlightActivityDays() {
         const calendarDays = document.querySelectorAll('.calendar-day');
-        calendarDays.forEach(day => {
+        calendarDays.forEach((day) => {
           day.classList.remove('highlight');
           if (selectedActivity && day.dataset.mood) {
             const moodData = JSON.parse(day.dataset.mood);
-            if (moodData.activities.toLowerCase().includes(selectedActivity.toLowerCase())) {
+            if (
+              moodData.activities
+                .toLowerCase()
+                .includes(selectedActivity.toLowerCase())
+            ) {
               day.classList.add('highlight');
             }
           }
@@ -597,29 +609,24 @@
           ]);
 
           updateActivitiesCombobox(activitiesResponse);
-          createActivityButtons(); // Add this line to create activity buttons
+          createActivityButtons();
           preSelectTodayMood(moodResponse);
           displayCalendar(moodResponse);
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner('Failed to fetch mood entries. Please try again.', true);
+          showAlertBanner(
+            'Failed to fetch mood entries. Please try again.',
+            true
+          );
         }
       }
 
-      // Add this function to update the activities combobox
+      // Modify the updateActivitiesCombobox function
       function updateActivitiesCombobox(customActivities) {
         const checkboxesContainer = document.getElementById('checkboxes');
         checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
 
-        const activities = customActivities || [
-          'Good Sleep',
-          'Worked Out',
-          'Sports',
-          'Social',
-          'Rested',
-        ];
-
-        activities.forEach((activity) => {
+        customActivities.forEach((activity) => {
           const label = document.createElement('label');
           const input = document.createElement('input');
           input.type = 'checkbox';
@@ -887,11 +894,15 @@
       // Add this new function
       function showMoodBubble(event) {
         const moodData = JSON.parse(event.target.dataset.mood || '{}');
-        const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), parseInt(event.target.textContent), 12);
+        const clickedDate = new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth(),
+          parseInt(event.target.textContent),
+          12
+        );
         const bubble = document.createElement('div');
         bubble.classList.add('mood-bubble');
 
-        
         console.log(Object.keys(moodData).length === 0);
 
         if (Object.keys(moodData).length === 0) {
@@ -957,9 +968,11 @@
         bubble.style.top = `${top}px`;
 
         // Add close functionality
-        bubble.querySelector('.mood-bubble-close').addEventListener('click', () => {
-          document.body.removeChild(bubble);
-        });
+        bubble
+          .querySelector('.mood-bubble-close')
+          .addEventListener('click', () => {
+            document.body.removeChild(bubble);
+          });
 
         // Close bubble when clicking outside
         document.addEventListener('click', function closeBubble(e) {
@@ -972,34 +985,48 @@
         if (Object.keys(moodData).length === 0) {
           // Set up mood submission form functionality
           const moodOptions = bubble.querySelectorAll('.mood-option');
-          moodOptions.forEach(option => {
+          moodOptions.forEach((option) => {
             option.addEventListener('click', () => {
-              moodOptions.forEach(opt => opt.classList.remove('selected'));
+              moodOptions.forEach((opt) => opt.classList.remove('selected'));
               option.classList.add('selected');
             });
           });
 
-          // Fetch and populate activities
-          fetchCustomActivities().then(activities => {
-            updateBubbleActivitiesCombobox(activities, bubble.querySelector('#bubbleCheckboxes'));
-          });
+          // Use the activities fetched earlier
+          updateBubbleActivitiesCombobox(
+            activities,
+            bubble.querySelector('#bubbleCheckboxes')
+          );
 
           // Set up mood submission
-          bubble.querySelector('#bubbleSubmitMood').addEventListener('click', () => {
-            const selectedMood = bubble.querySelector('.mood-option.selected');
-            if (!selectedMood) {
-              showAlertBanner('Please select a mood before submitting.', true);
-              return;
-            }
+          bubble
+            .querySelector('#bubbleSubmitMood')
+            .addEventListener('click', () => {
+              const selectedMood = bubble.querySelector(
+                '.mood-option.selected'
+              );
+              if (!selectedMood) {
+                showAlertBanner(
+                  'Please select a mood before submitting.',
+                  true
+                );
+                return;
+              }
 
-            const rating = selectedMood.getAttribute('data-rating');
-            const comment = bubble.querySelector('#bubbleCommentBox').value;
-            const selectedActivities = Array.from(
-              bubble.querySelectorAll('#bubbleCheckboxes input:checked')
-            ).map(checkbox => checkbox.value);
+              const rating = selectedMood.getAttribute('data-rating');
+              const comment = bubble.querySelector('#bubbleCommentBox').value;
+              const selectedActivities = Array.from(
+                bubble.querySelectorAll('#bubbleCheckboxes input:checked')
+              ).map((checkbox) => checkbox.value);
 
-            submitMood(clickedDate, rating, comment, selectedActivities, bubble);
-          });
+              submitMood(
+                clickedDate,
+                rating,
+                comment,
+                selectedActivities,
+                bubble
+              );
+            });
         }
       }
 
@@ -1015,25 +1042,20 @@
             document.body.removeChild(bubble);
             fetchMoodEntries(); // Refresh the mood entries
           })
-          .catch(error => {
+          .catch((error) => {
             console.error('Error:', error);
             showAlertBanner('Failed to submit mood. Please try again.', true);
           });
       }
 
-      // Add this new function for updating the bubble's activities combobox
-      function updateBubbleActivitiesCombobox(customActivities, checkboxesContainer) {
+      // Modify the updateBubbleActivitiesCombobox function
+      function updateBubbleActivitiesCombobox(
+        customActivities,
+        checkboxesContainer
+      ) {
         checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
 
-        const activities = customActivities || [
-          'Good Sleep',
-          'Worked Out',
-          'Sports',
-          'Social',
-          'Rested',
-        ];
-
-        activities.forEach((activity) => {
+        customActivities.forEach((activity) => {
           const label = document.createElement('label');
           label.classList.add('bubble-checkbox-label');
 
@@ -1050,8 +1072,9 @@
       }
 
       // Add this new function for showing/hiding the bubble's checkboxes
-      window.showBubbleCheckboxes = function(selectBox) {
-        const checkboxes = selectBox.parentNode.querySelector('#bubbleCheckboxes');
+      window.showBubbleCheckboxes = function (selectBox) {
+        const checkboxes =
+          selectBox.parentNode.querySelector('#bubbleCheckboxes');
         if (checkboxes.style.display === 'none') {
           checkboxes.style.display = 'block';
         } else {

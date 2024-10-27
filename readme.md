@@ -378,14 +378,20 @@ Response:
 ```json
 {
   "message": "Activities updated successfully",
-  "activities": ["exercise", "reading", "meditation", "cooking"]
+  "activities": ["exercise", "reading", "meditation", "cooking"],
+  "maxActivities": 5
 }
 ```
+
+Notes:
+
+- Basic users can add up to 5 custom activities.
+- Pro and Enterprise users can add up to 20 custom activities.
 
 Possible errors:
 
 - 400: Validation errors
-- 403: Access denied (not Pro/Enterprise)
+- 400: Exceeded maximum number of activities for account level
 - 500: Internal server error
 
 ### Submit contact form

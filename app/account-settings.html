@@ -261,7 +261,7 @@
         top: 0;
         left: 0;
         right: 0;
-        background-color: #4CAF50;
+        background-color: #4caf50;
         color: white;
         padding: 10px;
         text-align: center;
@@ -278,7 +278,9 @@
   <body>
     <header>
       <div id="alertBanner" class="alert-banner"></div>
-      <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
+      <a href="index.html"
+        ><img src="img/logo.png" alt="Moodful Logo" class="logo"
+      /></a>
       <nav>
         <div class="hamburger-menu">
           <span></span>
@@ -432,22 +434,24 @@
           console.log(`User account level: ${accountLevel}`);
           if (accountLevel === 'pro' || accountLevel === 'enterprise') {
             document.getElementById('exportContainer').style.display = 'block';
-            document.getElementById('customActivitiesContainer').style.display =
-              'block';
             document.getElementById('upgradeSection').style.display = 'none';
             document.getElementById('downgradeSection').style.display = 'block';
-            fetchCustomActivities();
-            console.log(
-              'Export button and custom activities displayed for pro/enterprise user'
-            );
+            console.log('Export button displayed for pro/enterprise user');
           } else {
-            console.log(
-              'Export button and custom activities not displayed for basic user'
-            );
+            document.getElementById('upgradeSection').style.display = 'block';
+            console.log('Export button not displayed for basic user');
           }
+
+          // Always show custom activities container
+          document.getElementById('customActivitiesContainer').style.display =
+            'block';
+          fetchCustomActivities(accountLevel);
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner('Failed to fetch user settings. Please try again.', true);
+          showAlertBanner(
+            'Failed to fetch user settings. Please try again.',
+            true
+          );
         }
       }
 
@@ -464,7 +468,10 @@
           showAlertBanner(`${setting} updated successfully!`);
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner(`Failed to update ${setting}. Please try again.`, true);
+          showAlertBanner(
+            `Failed to update ${setting}. Please try again.`,
+            true
+          );
           // Revert the toggle if the update failed
           event.target.checked = !value;
         }
@@ -491,7 +498,10 @@
           linkElement.click();
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner('Failed to export mood data. Please try again.', true);
+          showAlertBanner(
+            'Failed to export mood data. Please try again.',
+            true
+          );
         }
       }
 
@@ -511,7 +521,7 @@
         });
 
       // Modify the fetchCustomActivities function
-      async function fetchCustomActivities() {
+      async function fetchCustomActivities(accountLevel) {
         try {
           const data = await authenticatedApiCall(
             '/api/user/activities',
@@ -529,18 +539,22 @@
             ];
           }
 
-          updateActivitiesList(activities);
+          updateActivitiesList(activities, accountLevel);
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner('Failed to fetch custom activities. Please try again.', true);
+          showAlertBanner(
+            'Failed to fetch custom activities. Please try again.',
+            true
+          );
         }
       }
 
-      // Update activities list in the DOM
-      function updateActivitiesList(activities) {
+      // Update the updateActivitiesList function
+      function updateActivitiesList(activities, accountLevel) {
         const list = document.getElementById('activitiesList');
         list.innerHTML = '';
-        activities.forEach((activity, index) => {
+        const maxActivities = accountLevel === 'basic' ? 5 : 20;
+        activities.slice(0, maxActivities).forEach((activity, index) => {
           const li = document.createElement('li');
           const activitySpan = document.createElement('span');
           activitySpan.textContent = activity;
@@ -551,6 +565,19 @@
           li.appendChild(deleteBtn);
           list.appendChild(li);
         });
+
+        // Update the new activity input field
+        const newActivityInput = document.getElementById('newActivity');
+        const addActivityButton = document.getElementById('addActivity');
+        if (activities.length >= maxActivities) {
+          newActivityInput.disabled = true;
+          addActivityButton.disabled = true;
+          newActivityInput.placeholder = `Max ${maxActivities} activities reached`;
+        } else {
+          newActivityInput.disabled = false;
+          addActivityButton.disabled = false;
+          newActivityInput.placeholder = 'New activity';
+        }
       }
 
       // Modify the addActivity function
@@ -558,20 +585,46 @@
         const newActivity = document.getElementById('newActivity').value.trim();
         if (newActivity) {
           try {
+            const currentActivities = getCurrentActivities();
+            const accountLevel = await getAccountLevel();
+            const maxActivities = accountLevel === 'basic' ? 5 : 20;
+
+            if (currentActivities.length >= maxActivities) {
+              showAlertBanner(
+                `You can only have up to ${maxActivities} activities with your current plan.`,
+                true
+              );
+              return;
+            }
+
             const data = await authenticatedApiCall(
               '/api/user/activities',
               'POST',
               {
-                activities: [...getCurrentActivities(), newActivity],
+                activities: [...currentActivities, newActivity],
               }
             );
-            updateActivitiesList(data.activities);
+            updateActivitiesList(data.activities, accountLevel);
             document.getElementById('newActivity').value = '';
             showAlertBanner('Activity added successfully!');
           } catch (error) {
             console.error('Error:', error);
             showAlertBanner('Failed to add activity. Please try again.', true);
           }
+        }
+      }
+
+      // Add a new function to get the account level
+      async function getAccountLevel() {
+        try {
+          const settings = await authenticatedApiCall(
+            '/api/user/settings',
+            'GET'
+          );
+          return settings.accountLevel;
+        } catch (error) {
+          console.error('Error getting account level:', error);
+          return 'basic'; // Default to basic if there's an error
         }
       }
 
@@ -666,7 +719,10 @@
             // Optionally, you can redirect the user or update the UI to reflect the new account status
           } catch (error) {
             console.error('Error during upgrade:', error);
-            showAlertBanner('An error occurred during upgrade. Please try again.', true);
+            showAlertBanner(
+              'An error occurred during upgrade. Please try again.',
+              true
+            );
           }
         });
 
@@ -686,7 +742,10 @@
               window.location.reload();
             } catch (error) {
               console.error('Error during downgrade:', error);
-              showAlertBanner('An error occurred during downgrade. Please try again.', true);
+              showAlertBanner(
+                'An error occurred during downgrade. Please try again.',
+                true
+              );
             }
           }
         });

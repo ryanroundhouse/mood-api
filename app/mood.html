@@ -167,7 +167,7 @@
         top: 0;
         left: 0;
         right: 0;
-        background-color: #4CAF50;
+        background-color: #4caf50;
         color: white;
         padding: 10px;
         text-align: center;
@@ -183,7 +183,9 @@
   <body>
     <header>
       <div id="alertBanner" class="alert-banner"></div>
-      <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
+      <a href="index.html"
+        ><img src="img/logo.png" alt="Moodful Logo" class="logo"
+      /></a>
       <nav>
         <div class="hamburger-menu">
           <span></span>
@@ -235,22 +237,32 @@
           <div class="overSelect"></div>
         </div>
         <div id="checkboxes">
-          <label for="goodSleep">
-            <input type="checkbox" id="goodSleep" value="good sleep" />Good
-            Sleep</label
+          <label for="energized">
+            <input
+              type="checkbox"
+              id="energized"
+              value="energized"
+            />Energized</label
           >
-          <label for="workedOut">
-            <input type="checkbox" id="workedOut" value="worked out" />Worked
-            Out</label
+          <label for="active">
+            <input type="checkbox" id="active" value="active" />Active</label
           >
-          <label for="sports">
-            <input type="checkbox" id="sports" value="sports" />Sports</label
+          <label for="connected">
+            <input
+              type="checkbox"
+              id="connected"
+              value="connected"
+            />Connected</label
           >
-          <label for="social">
-            <input type="checkbox" id="social" value="social" />Social</label
+          <label for="productive">
+            <input
+              type="checkbox"
+              id="productive"
+              value="productive"
+            />Productive</label
           >
-          <label for="rested">
-            <input type="checkbox" id="rested" value="rested" />Rested</label
+          <label for="relaxed">
+            <input type="checkbox" id="relaxed" value="relaxed" />Relaxed</label
           >
         </div>
       </div>
@@ -266,7 +278,10 @@
       // Add this function outside the module to make it globally accessible
       function showCheckboxes() {
         var checkboxes = document.getElementById('checkboxes');
-        if (checkboxes.style.display === 'none' || checkboxes.style.display === '') {
+        if (
+          checkboxes.style.display === 'none' ||
+          checkboxes.style.display === ''
+        ) {
           checkboxes.style.display = 'block';
         } else {
           checkboxes.style.display = 'none';
@@ -297,17 +312,15 @@
 
       // Add this function to update the activities combobox
       function updateActivitiesCombobox(customActivities) {
-        
-        
         const checkboxesContainer = document.getElementById('checkboxes');
         checkboxesContainer.innerHTML = ''; // Clear existing checkboxes
 
         const activities = customActivities || [
-          'Good Sleep',
-          'Worked Out',
-          'Sports',
-          'Social',
-          'Rested',
+          'energized',
+          'active',
+          'connected',
+          'productive',
+          'relaxed',
         ];
 
         activities.forEach((activity) => {

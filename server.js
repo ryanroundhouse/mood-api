@@ -183,9 +183,6 @@ const generalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply the general rate limiter to all routes
-app.use(generalLimiter);
-
 // Define a stricter rate limiter for sensitive routes
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -196,6 +193,11 @@ const strictLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Apply rate limiters only when not in development mode
+if (!isDevelopment) {
+  // Apply the general rate limiter to all routes
+  app.use(generalLimiter);
+}
 // Apply the strict rate limiter to sensitive routes
 app.use('/api/register', strictLimiter);
 app.use('/api/login', strictLimiter);
@@ -899,47 +901,41 @@ app.post('/api/reset-password/:token', strictLimiter, (req, res) => {
 });
 
 // GET endpoint for user activities
-app.get(
-  '/api/user/activities',
-  authenticateToken,
-  checkProOrEnterprise,
-  (req, res) => {
-    const userId = req.user.id;
+app.get('/api/user/activities', authenticateToken, (req, res) => {
+  const userId = req.user.id;
 
-    db.get(
-      'SELECT activities FROM custom_activities WHERE userId = ?',
-      [userId],
-      (err, row) => {
-        if (err) {
-          logger.error('Error fetching user activities:', err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-
-        let activities;
-        if (row && row.activities) {
-          activities = JSON.parse(row.activities);
-        } else {
-          // Default activities if no custom activities are found
-          activities = [
-            'good sleep',
-            'worked out',
-            'sports',
-            'social',
-            'rested',
-          ];
-        }
-
-        res.json({ activities });
+  db.get(
+    'SELECT activities FROM custom_activities WHERE userId = ?',
+    [userId],
+    (err, row) => {
+      if (err) {
+        logger.error('Error fetching user activities:', err);
+        return res.status(500).json({ error: 'Internal server error' });
       }
-    );
-  }
-);
+
+      let activities;
+      if (row && row.activities && row.activities !== '[]') {
+        activities = JSON.parse(row.activities);
+      } else {
+        // Default activities if no custom activities are found or if activities are '[]'
+        activities = [
+          'energized',
+          'active',
+          'connected',
+          'productive',
+          'relaxed',
+        ];
+      }
+
+      res.json({ activities });
+    }
+  );
+});
 
 // POST endpoint for user activities
 app.post(
   '/api/user/activities',
   authenticateToken,
-  checkProOrEnterprise,
   [
     body('activities').isArray(),
     body('activities.*').isString().trim().isLength({ min: 1, max: 100 }),
@@ -951,22 +947,60 @@ app.post(
     }
 
     const userId = req.user.id;
-    const { activities } = req.body;
-    const activitiesJson = JSON.stringify(activities);
+    const accountLevel = req.user.accountLevel;
+    let { activities } = req.body;
 
-    db.run(
-      'INSERT OR REPLACE INTO custom_activities (userId, activities) VALUES (?, ?)',
-      [userId, activitiesJson],
-      (err) => {
-        if (err) {
-          logger.error('Error updating user activities:', err);
-          return res.status(500).json({ error: 'Internal server error' });
+    // Determine the maximum number of activities based on account level
+    const maxActivities =
+      accountLevel === 'pro' || accountLevel === 'enterprise' ? 20 : 5;
+
+    if (activities.length > maxActivities) {
+      return res.status(400).json({
+        error: `You can only save up to ${maxActivities} activities with your current account level.`,
+      });
+    }
+
+    if (activities.length === 0) {
+      // If the activities list is empty, remove the row from the table
+      db.run(
+        'DELETE FROM custom_activities WHERE userId = ?',
+        [userId],
+        (err) => {
+          if (err) {
+            logger.error('Error removing user activities:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          logger.info(`User activities removed for user: ${userId}`);
+          res.json({
+            message: 'Activities removed successfully',
+            activities: [],
+            maxActivities,
+          });
         }
+      );
+    } else {
+      // If activities are provided, update or insert them
+      const activitiesJson = JSON.stringify(activities);
 
-        logger.info(`User activities updated for user: ${userId}`);
-        res.json({ message: 'Activities updated successfully', activities });
-      }
-    );
+      db.run(
+        'INSERT OR REPLACE INTO custom_activities (userId, activities) VALUES (?, ?)',
+        [userId, activitiesJson],
+        (err) => {
+          if (err) {
+            logger.error('Error updating user activities:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          logger.info(`User activities updated for user: ${userId}`);
+          res.json({
+            message: 'Activities updated successfully',
+            activities,
+            maxActivities,
+          });
+        }
+      );
+    }
   }
 );
 
@@ -995,43 +1029,36 @@ app.get('/api/user/activities/:authCode', (req, res) => {
 
       const userId = row.userId;
 
-      // Check if the user has a pro or enterprise account
+      // Fetch custom activities
       db.get(
-        'SELECT accountLevel FROM users WHERE id = ?',
+        'SELECT activities FROM custom_activities WHERE userId = ?',
         [userId],
-        (err, userRow) => {
+        (err, activitiesRow) => {
           if (err) {
-            logger.error('Error fetching user account level:', err);
+            logger.error('Error fetching user activities:', err);
             return res.status(500).json({ error: 'Internal server error' });
           }
 
+          let activities;
           if (
-            !userRow ||
-            (userRow.accountLevel !== 'pro' &&
-              userRow.accountLevel !== 'enterprise')
+            activitiesRow &&
+            activitiesRow.activities &&
+            activitiesRow.activities !== '[]'
           ) {
-            return res.status(403).json({
-              error: 'Access denied. Pro or Enterprise account required.',
-            });
+            activities = JSON.parse(activitiesRow.activities);
+          } else {
+            // Default activities if no custom activities are found or if activities are '[]'
+            activities = [
+              'energized',
+              'active',
+              'connected',
+              'productive',
+              'relaxed',
+            ];
           }
 
-          // Fetch custom activities
-          db.get(
-            'SELECT activities FROM custom_activities WHERE userId = ?',
-            [userId],
-            (err, activitiesRow) => {
-              if (err) {
-                logger.error('Error fetching user activities:', err);
-                return res.status(500).json({ error: 'Internal server error' });
-              }
-
-              const activities = activitiesRow
-                ? JSON.parse(activitiesRow.activities)
-                : [];
-              logger.info(`Custom activities fetched for user: ${userId}`);
-              res.json({ activities });
-            }
-          );
+          logger.info(`Activities fetched for user: ${userId}`);
+          res.json({ activities });
         }
       );
     }

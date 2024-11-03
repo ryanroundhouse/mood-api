@@ -126,6 +126,8 @@ const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY;
 const EMAIL_DOMAIN = process.env.EMAIL_DOMAIN;
 const NOREPLY_EMAIL = process.env.NOREPLY_EMAIL;
 const MY_EMAIL = process.env.EMAIL_ADDRESS;
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 
 app.use(express.json());
 // Error handling middleware
@@ -231,6 +233,58 @@ if (isDevelopment) {
     );
     next();
   });
+}
+
+function encrypt(text) {
+  if (!text) return null;
+
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(
+    ENCRYPTION_ALGORITHM,
+    Buffer.from(ENCRYPTION_KEY, 'hex'),
+    iv
+  );
+
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  const authTag = cipher.getAuthTag();
+
+  // Return iv:authTag:encryptedData
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+}
+
+function decrypt(encryptedData) {
+  // Return null if the input is null, undefined, or empty string
+  if (!encryptedData) {
+    return null;
+  }
+
+  try {
+    const [ivHex, authTagHex, encryptedText] = encryptedData.split(':');
+
+    // Check if we have all required parts
+    if (!ivHex || !authTagHex || !encryptedText) {
+      logger.warn('Malformed encrypted data encountered');
+      return null;
+    }
+
+    const decipher = crypto.createDecipheriv(
+      ENCRYPTION_ALGORITHM,
+      Buffer.from(ENCRYPTION_KEY, 'hex'),
+      Buffer.from(ivHex, 'hex')
+    );
+
+    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+
+    return decrypted;
+  } catch (error) {
+    logger.error('Error decrypting data:', error);
+    return null;
+  }
 }
 
 // Endpoint to get user settings
@@ -374,6 +428,9 @@ app.post(
     const { rating, comment, activities } = req.body;
     const datetime = getCurrentESTDateTime();
 
+    // Encrypt the comment if it exists
+    const encryptedComment = comment ? encrypt(comment) : null;
+
     logger.info(`Attempting to post mood with auth code: ${authCode}`);
 
     // Convert activities array to JSON string
@@ -422,7 +479,7 @@ app.post(
               // Update existing mood
               db.run(
                 `UPDATE moods SET rating = ?, comment = ?, datetime = ?, activities = ? WHERE id = ?`,
-                [rating, comment, datetime, activitiesJson, row.id],
+                [rating, encryptedComment, datetime, activitiesJson, row.id],
                 (updateErr) => {
                   if (updateErr) {
                     logger.error('Error updating mood:', updateErr);
@@ -438,7 +495,7 @@ app.post(
               // Insert new mood
               db.run(
                 `INSERT INTO moods (userId, datetime, rating, comment, activities) VALUES (?, ?, ?, ?, ?)`,
-                [userId, datetime, rating, comment, activitiesJson],
+                [userId, datetime, rating, encryptedComment, activitiesJson],
                 (insertErr) => {
                   if (insertErr) {
                     logger.error('Error posting mood:', insertErr);
@@ -710,6 +767,9 @@ app.post(
       datetime = convertToEST(new Date(datetime).toISOString());
     }
 
+    // Encrypt the comment if it exists
+    const encryptedComment = comment ? encrypt(comment) : null;
+
     // Convert activities array to JSON string
     const activitiesJson = activities ? JSON.stringify(activities) : null;
 
@@ -732,19 +792,9 @@ app.post(
         }
 
         if (mood) {
-          console.log('mood', mood);
-          // Log out the values going into the SQL statement
-          logger.info(`Updating mood with values:
-            datetime: ${datetime}
-            rating: ${rating}
-            comment: ${comment}
-            activities: ${activitiesJson}
-            id: ${mood.id}
-          `);
-
           db.run(
             `UPDATE moods SET datetime = ?, rating = ?, comment = ?, activities = ? WHERE id = ?`,
-            [datetime, rating, comment, activitiesJson, mood.id],
+            [datetime, rating, encryptedComment, activitiesJson, mood.id],
             function (err) {
               if (err) {
                 logger.error('Error creating/updating mood:', err);
@@ -757,24 +807,15 @@ app.post(
                 userId,
                 datetime,
                 rating,
-                comment,
+                comment, // Return the unencrypted comment to the client
                 activities,
               });
             }
           );
         } else {
-          // Log all values before inserting
-          logger.info(`Inserting mood with values:
-            userId: ${userId}
-            datetime: ${datetime}
-            rating: ${rating}
-            comment: ${comment}
-            activities: ${activitiesJson}
-          `);
-
           db.run(
             `INSERT INTO moods (userId, datetime, rating, comment, activities) VALUES (?, ?, ?, ?, ?)`,
-            [userId, datetime, rating, comment, activitiesJson],
+            [userId, datetime, rating, encryptedComment, activitiesJson],
             function (err) {
               if (err) {
                 logger.error('Error creating/updating mood:', err);
@@ -787,7 +828,7 @@ app.post(
                 userId,
                 datetime,
                 rating,
-                comment,
+                comment, // Return the unencrypted comment to the client
                 activities,
               });
             }
@@ -811,8 +852,17 @@ app.get('/api/moods', authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Internal server error' });
       }
 
-      logger.info(`Fetched all moods for user: ${userId}`);
-      res.json(moods);
+      // Decrypt comments for each mood
+      const decryptedMoods = moods.map((mood) => ({
+        ...mood,
+        comment: mood.comment ? decrypt(mood.comment) : null,
+        activities: mood.activities ? JSON.parse(mood.activities) : null,
+      }));
+
+      logger.info(
+        `Fetched and decrypted ${decryptedMoods.length} moods for user: ${userId}`
+      );
+      res.json(decryptedMoods);
     }
   );
 });
@@ -1306,7 +1356,7 @@ app.post(
   }
 );
 
-// New endpoint to get user's summary
+// Get user's summary
 app.get('/api/user/summary', authenticateToken, generalLimiter, (req, res) => {
   const userId = req.user.id;
 
@@ -1326,20 +1376,24 @@ app.get('/api/user/summary', authenticateToken, generalLimiter, (req, res) => {
       let basicInsights, aiInsights;
 
       try {
-        basicInsights = JSON.parse(row.basic);
+        // Decrypt and parse basic insights
+        const decryptedBasic = row.basic ? decrypt(row.basic) : null;
+        basicInsights = decryptedBasic ? JSON.parse(decryptedBasic) : [];
       } catch (error) {
-        logger.error('Error parsing basic insights:', error);
+        logger.error('Error parsing/decrypting basic insights:', error);
         basicInsights = [];
       }
 
       try {
-        aiInsights = JSON.parse(row.advanced);
+        // Decrypt and parse AI insights
+        const decryptedAdvanced = row.advanced ? decrypt(row.advanced) : null;
+        aiInsights = decryptedAdvanced ? JSON.parse(decryptedAdvanced) : [];
       } catch (error) {
-        logger.error('Error parsing AI insights:', error);
+        logger.error('Error parsing/decrypting AI insights:', error);
         aiInsights = [];
       }
 
-      logger.info(`Summary fetched for user: ${userId}`);
+      logger.info(`Summary fetched and decrypted for user: ${userId}`);
       res.json({
         basicInsights: basicInsights,
         aiInsights: aiInsights,

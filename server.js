@@ -852,11 +852,11 @@ app.get('/api/moods', authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Internal server error' });
       }
 
-      // Decrypt comments for each mood
+      // Decrypt comments for each mood but leave activities as a string
       const decryptedMoods = moods.map((mood) => ({
         ...mood,
         comment: mood.comment ? decrypt(mood.comment) : null,
-        activities: mood.activities ? JSON.parse(mood.activities) : null,
+        // Don't parse the activities JSON string
       }));
 
       logger.info(

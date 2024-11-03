@@ -16,6 +16,7 @@ nltk.download('wordnet')
 from nltk.corpus import opinion_lexicon
 from nltk.corpus import wordnet
 from openai import OpenAI
+from Crypto.Cipher import AES
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +51,30 @@ from datetime import datetime, timedelta, timezone
 import re
 from datetime import datetime, timedelta
 
+def decrypt(encrypted_data):
+    if not encrypted_data:
+        return None
+    
+    try:
+        # Split the encrypted data into its components
+        iv_hex, tag_hex, ciphertext_hex = encrypted_data.split(':')
+        
+        # Convert hex strings back to bytes
+        iv = bytes.fromhex(iv_hex)
+        tag = bytes.fromhex(tag_hex)
+        ciphertext = bytes.fromhex(ciphertext_hex)
+        
+        # Create cipher object
+        cipher = AES.new(bytes.fromhex(os.getenv('ENCRYPTION_KEY')), AES.MODE_GCM, nonce=iv)
+        
+        # Decrypt the data
+        decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+        
+        return decrypted.decode()
+    except Exception as e:
+        print(f"Error decrypting data: {e}")
+        return None
+
 def get_user_moods(user_id, year, month):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -69,7 +94,13 @@ def get_user_moods(user_id, year, month):
         dt_str = re.sub(r'(Z|[+-]\d{2}:\d{2})$', '', row[0])
         dt = datetime.fromisoformat(dt_str)
         day = dt.strftime('%d')
-        moods[day] = {'rating': row[1], 'comment': row[2], 'activities': json.loads(row[3]) if row[3] else []}
+        # Decrypt the comment
+        decrypted_comment = decrypt(row[2]) if row[2] else None
+        moods[day] = {
+            'rating': row[1], 
+            'comment': decrypted_comment, 
+            'activities': json.loads(row[3]) if row[3] else []
+        }
     
     conn.close()
     return moods
@@ -219,11 +250,11 @@ def generate_mood_summary(user_id, start_date, end_date):
 
     data = []
     for row in cursor.fetchall():
-        datetime_str, rating, comment, activities_str = row
+        datetime_str, rating, encrypted_comment, activities_str = row
         entry = {
             'datetime': datetime.fromisoformat(datetime_str.replace('Z', '+00:00')),
             'rating': rating,
-            'comment': comment,
+            'comment': decrypt(encrypted_comment) if encrypted_comment else None,
             'activities': json.loads(activities_str) if activities_str else []
         }
         data.append(entry)
@@ -452,6 +483,24 @@ def get_openai_insights(moods):
         {"name": "Mood Prediction", "description": content["Answer4"]}
     ]
 
+def encrypt(text):
+    if not text:
+        return None
+    
+    # Convert text to string if it's not already
+    if not isinstance(text, str):
+        text = json.dumps(text)
+    
+    # Generate a random 12-byte IV
+    iv = os.urandom(12)
+    cipher = AES.new(bytes.fromhex(os.getenv('ENCRYPTION_KEY')), AES.MODE_GCM, nonce=iv)
+    
+    # Encrypt the text
+    ciphertext, tag = cipher.encrypt_and_digest(text.encode())
+    
+    # Return iv:tag:ciphertext format
+    return f"{iv.hex()}:{tag.hex()}:{ciphertext.hex()}"
+
 def main():
     users = get_users()
     current_date = datetime.now()
@@ -473,23 +522,23 @@ def main():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Convert basic_stats and openai_insights to JSON strings
-        basic_stats_json = json.dumps(basic_stats)
-        advanced_insights = json.dumps(openai_insights) if openai_insights else None
+        # Encrypt basic_stats and openai_insights before storing
+        encrypted_basic_stats = encrypt(basic_stats)
+        encrypted_insights = encrypt(openai_insights) if openai_insights else None
         
         # Insert or update the summaries table
         cursor.execute("""
             INSERT OR REPLACE INTO summaries (id, basic, advanced)
             VALUES (?, ?, ?)
-        """, (user_id, basic_stats_json, advanced_insights))
+        """, (user_id, encrypted_basic_stats, encrypted_insights))
         conn.commit()
         conn.close()
         
         # Only send email if emailWeeklySummary is enabled
-        if email_weekly_summary:
-            send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
-        else:
-            print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
+        # if email_weekly_summary:
+        #     send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
+        # else:
+        #     print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
 
 if __name__ == "__main__":
     main()

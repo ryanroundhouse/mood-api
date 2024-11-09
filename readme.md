@@ -504,6 +504,51 @@ Possible errors:
 - 404: Summary not found
 - 500: Internal server error
 
+### Get all user's summaries
+
+- **GET** `/api/user/summaries`
+
+Response:
+
+```json
+[
+  {
+    "date": "2024-03-21",
+    "basicInsights": [
+      {
+        "name": "Physical Activity Benefits",
+        "description": "Engaging in physical activities increased your mood to an average of 3.00."
+      }
+      // More basic insight objects...
+    ],
+    "aiInsights": [
+      {
+        "name": "Mood Insights",
+        "description": "Your mood ratings align well with activities and comments."
+      }
+      // More AI-generated insight objects...
+    ]
+  },
+  {
+    "date": "2024-03-14",
+    "basicInsights": [...],
+    "aiInsights": [...]
+  }
+  // More weekly summaries...
+]
+```
+
+Notes:
+
+- Returns all available summaries for the user, ordered by date (newest first)
+- Each summary includes both basic and AI-generated insights
+- Insights are automatically decrypted before being sent
+
+Possible errors:
+
+- 404: No summaries found
+- 500: Internal server error
+
 ## Security
 
 - Passwords are hashed using bcrypt

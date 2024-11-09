@@ -526,19 +526,23 @@ def main():
         encrypted_basic_stats = encrypt(basic_stats)
         encrypted_insights = encrypt(openai_insights) if openai_insights else None
         
-        # Insert or update the summaries table
+        # Get today's date in ISO format
+        today_date = datetime.now().date().isoformat()
+        
+        # Insert the summary with the current date
         cursor.execute("""
-            INSERT OR REPLACE INTO summaries (id, basic, advanced)
-            VALUES (?, ?, ?)
-        """, (user_id, encrypted_basic_stats, encrypted_insights))
+            INSERT INTO summaries (userId, date, basic, advanced)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, today_date, encrypted_basic_stats, encrypted_insights))
+        
         conn.commit()
         conn.close()
         
         # Only send email if emailWeeklySummary is enabled
-        # if email_weekly_summary:
-        #     send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
-        # else:
-        #     print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
+        if email_weekly_summary:
+            send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
+        else:
+            print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
 
 if __name__ == "__main__":
     main()

@@ -99,10 +99,12 @@ db.serialize(() => {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS summaries (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId INTEGER NOT NULL,
+      date TEXT NOT NULL,
       basic TEXT,
       advanced TEXT,
-      FOREIGN KEY (id) REFERENCES users(id)
+      FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
 
@@ -1361,7 +1363,7 @@ app.get('/api/user/summary', authenticateToken, generalLimiter, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT basic, advanced FROM summaries WHERE id = ?`,
+    `SELECT basic, advanced FROM summaries WHERE userId = ? ORDER BY date DESC LIMIT 1`,
     [userId],
     (err, row) => {
       if (err) {
@@ -1481,3 +1483,63 @@ app.use(express.static(path.join(__dirname, 'app')));
 app.listen(port, () => {
   logger.info(`API listening at http://localhost:${port}`);
 });
+
+// Get all user's summaries
+app.get(
+  '/api/user/summaries',
+  authenticateToken,
+  generalLimiter,
+  (req, res) => {
+    const userId = req.user.id;
+
+    db.all(
+      `SELECT date, basic, advanced FROM summaries WHERE userId = ? ORDER BY date DESC`,
+      [userId],
+      (err, rows) => {
+        if (err) {
+          logger.error('Error fetching user summaries:', err);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (!rows || rows.length === 0) {
+          return res.status(404).json({ error: 'No summaries found' });
+        }
+
+        const summaries = rows.map((row) => {
+          let basicInsights, aiInsights;
+
+          try {
+            // Decrypt and parse basic insights
+            const decryptedBasic = row.basic ? decrypt(row.basic) : null;
+            basicInsights = decryptedBasic ? JSON.parse(decryptedBasic) : [];
+          } catch (error) {
+            logger.error('Error parsing/decrypting basic insights:', error);
+            basicInsights = [];
+          }
+
+          try {
+            // Decrypt and parse AI insights
+            const decryptedAdvanced = row.advanced
+              ? decrypt(row.advanced)
+              : null;
+            aiInsights = decryptedAdvanced ? JSON.parse(decryptedAdvanced) : [];
+          } catch (error) {
+            logger.error('Error parsing/decrypting AI insights:', error);
+            aiInsights = [];
+          }
+
+          return {
+            date: row.date,
+            basicInsights,
+            aiInsights,
+          };
+        });
+
+        logger.info(
+          `${summaries.length} summaries fetched and decrypted for user: ${userId}`
+        );
+        res.json(summaries);
+      }
+    );
+  }
+);

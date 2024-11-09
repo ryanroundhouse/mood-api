@@ -142,7 +142,7 @@
         top: 0;
         left: 0;
         right: 0;
-        background-color: #4CAF50;
+        background-color: #4caf50;
         color: white;
         padding: 10px;
         text-align: center;
@@ -153,12 +153,36 @@
       .alert-banner.error {
         background-color: #f44336;
       }
+
+      .date-selector {
+        max-width: 800px;
+        margin: 20px auto;
+        padding: 0 20px;
+      }
+
+      .summary-date-select {
+        width: 200px;
+        padding: 8px;
+        border: 1px solid #6a89cc;
+        border-radius: 5px;
+        background-color: white;
+        color: #333;
+        font-size: 16px;
+      }
+
+      .summary-date-select:focus {
+        outline: none;
+        border-color: #4a69bd;
+        box-shadow: 0 0 5px rgba(106, 137, 204, 0.3);
+      }
     </style>
   </head>
   <body>
     <header>
       <div id="alertBanner" class="alert-banner"></div>
-      <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
+      <a href="index.html"
+        ><img src="img/logo.png" alt="Moodful Logo" class="logo"
+      /></a>
       <nav>
         <div class="hamburger-menu">
           <span></span>
@@ -192,6 +216,12 @@
       <h1>Weekly Mood Summary</h1>
       <p>Gain insights into your emotional well-being over the past week.</p>
     </section>
+
+    <div class="date-selector">
+      <select id="summaryDateSelect" class="summary-date-select">
+        <option value="">Select a date...</option>
+      </select>
+    </div>
 
     <div class="summary-container">
       <section class="summary-section">
@@ -252,24 +282,26 @@
           }
         });
 
+      let summariesData = []; // Store all summaries
+
       // Modify the fetchWeeklySummary function
       async function fetchWeeklySummary() {
         try {
-          const data = await authenticatedApiCall('/api/user/summary', 'GET');
+          const data = await authenticatedApiCall('/api/user/summaries', 'GET');
 
-          if (data.status === 404) {
+          if (!data || data.length === 0) {
             displayNoSummaryMessage();
           } else {
-            displayBasicInsights(data.basicInsights);
-            if (data.aiInsights && data.aiInsights.length > 0) {
-              displayAIInsights(data.aiInsights);
-            } else {
-              displayProFeatureMessage();
-            }
+            summariesData = data; // Store all summaries
+            populateDateDropdown(data);
+            displaySummary(data[0]); // Display most recent summary by default
           }
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner('Failed to fetch weekly summary. Please try again.', true);
+          showAlertBanner(
+            'Failed to fetch weekly summary. Please try again.',
+            true
+          );
         }
       }
 
@@ -325,6 +357,53 @@
           </div>
         `;
       }
+
+      // Add new function to populate the dropdown
+      function populateDateDropdown(summaries) {
+        const select = document.getElementById('summaryDateSelect');
+        select.innerHTML = '<option value="">Select a date...</option>';
+
+        summaries.forEach((summary, index) => {
+          const date = new Date(summary.date);
+          const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
+          const option = document.createElement('option');
+          option.value = index;
+          option.textContent = formattedDate;
+          select.appendChild(option);
+        });
+
+        // Set the first option (newest summary) as selected
+        if (summaries.length > 0) {
+          select.value = '0';
+        }
+      }
+
+      // Add new function to display a specific summary
+      function displaySummary(summary) {
+        if (summary.basicInsights) {
+          displayBasicInsights(summary.basicInsights);
+        }
+
+        if (summary.aiInsights && summary.aiInsights.length > 0) {
+          displayAIInsights(summary.aiInsights);
+        } else {
+          displayProFeatureMessage();
+        }
+      }
+
+      // Add event listener for dropdown changes
+      document
+        .getElementById('summaryDateSelect')
+        .addEventListener('change', (e) => {
+          const selectedIndex = e.target.value;
+          if (selectedIndex !== '') {
+            displaySummary(summariesData[selectedIndex]);
+          }
+        });
 
       // Fetch weekly summary when the page loads
       fetchWeeklySummary();

@@ -127,11 +127,23 @@
           background-color: #e8e8e8;
         }
       }
+
+      .data-section ul {
+        list-style-type: none;
+        padding-left: 20px;
+        color: #555;
+      }
+      .data-section ul ul {
+        padding-left: 40px;
+        list-style-type: disc;
+      }
     </style>
   </head>
   <body>
     <header>
-      <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
+      <a href="index.html"
+        ><img src="img/logo.png" alt="Moodful Logo" class="logo"
+      /></a>
       <nav>
         <div class="hamburger-menu">
           <span></span>
@@ -150,45 +162,89 @@
     <main>
       <section class="hero">
         <h1>Privacy Policy</h1>
-        <h2>Your Privacy is Important to Us</h2>
-      </section>
-      <section class="data-we-collect dashboard-container">
-        <h2>Data We Collect</h2>
-        <p>We collect the following data:</p>
-        <ul>
-          <li>Name</li>
-          <li>Email Address</li>
-          <li>
-            Mood Data
-            <ul>
-              <li>Rating</li>
-              <li>Optional Comment</li>
-            </ul>
-          </li>
-        </ul>
+        <h2>Committed to Protecting Your Privacy</h2>
       </section>
       <section class="dashboard-container">
-        <h2>How We Utilize Your Data</h2>
+        <h2>Information We Collect</h2>
         <p>
-          We handle your data with the utmost care and in accordance with the
-          plan you have selected:
+          To provide you with the best possible service, we collect the
+          following essential information:
+        </p>
+        <div class="data-section">
+          <ul>
+            <li>Name</li>
+            <li>Email Address</li>
+            <li>
+              Mood-Related Information
+              <ul>
+                <li>Mood Rating</li>
+                <li>Personal Reflections (Optional)</li>
+                <li>Associated Activities</li>
+                <li>Timestamp Information</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+        <p>
+          This information is collected for your personal use and insight.
+          Access is strictly controlled and limited to authorized Moodful
+          personnel who maintain and secure our systems.
+        </p>
+        <br />
+        <h2>Data Management Practices</h2>
+        <p>
+          Your trust is our priority. Here's how we protect your information:
+        </p>
+        <div class="data-section">
+          <h2>Security Infrastructure</h2>
+          <p>
+            Your privacy and data security are paramount to us. We implement
+            enterprise-grade encryption protocols for all stored data, including
+            mood entries and analytical summaries. Our comprehensive security
+            infrastructure ensures your personal information remains
+            confidential and protected through multiple layers of security
+            measures.
+          </p>
+          <p>
+            Should you wish to exercise your right to data deletion, please
+            submit a formal request through our
+            <a href="contact.html">secure contact portal</a> using your
+            registered email address.
+          </p>
+        </div>
+        <div class="data-section">
+          <h2>Secure Data Transfer</h2>
+          <p>
+            We employ state-of-the-art TLS (Transport Layer Security) encryption
+            protocols for all data transmissions between your devices and our
+            secure servers. This enterprise-level security measure ensures
+            complete confidentiality of your personal information and mood data
+            during transmission, protecting against any unauthorized access or
+            interception attempts.
+          </p>
+        </div>
+        <h2>Service Tiers and Data Processing</h2>
+        <p>
+          We maintain rigorous data handling standards across our service tiers:
         </p>
         <div class="plan-section free-plan">
-          <h2>Free Plan</h2>
+          <h2>Basic Plan</h2>
           <p>
-            Your data is securely stored and presented back to you in a
-            user-friendly format, allowing you to track and review your mood
-            entries.
+            Your data is maintained in our secure environment and presented
+            through an intuitive interface for personal tracking and reflection.
+            All analytics processing occurs within our secure infrastructure,
+            ensuring your information never leaves our protected environment.
           </p>
         </div>
         <div class="plan-section pro-plan">
-          <h2>Pro Plan</h2>
+          <h2>Professional Plan</h2>
           <p>
-            Your data is anonymized to protect your privacy. We then utilize
-            advanced analytical tools, including a Large Language Model (LLM),
-            to provide you with deeper insights and personalized recommendations
-            based on your mood data. Additionally, the Pro Plan allows you to
-            export your data.
+            Experience enhanced insights through our advanced analytics suite,
+            powered by sophisticated AI technology including our secure Large
+            Language Model (LLM). This premium service provides detailed pattern
+            analysis and personalized insights while maintaining strict data
+            privacy standards. Additionally, we offer secure data export
+            capabilities for your convenience.
           </p>
         </div>
       </section>

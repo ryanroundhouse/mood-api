@@ -265,6 +265,10 @@ def generate_mood_summary(user_id, start_date, end_date):
     # Sort data by datetime
     data.sort(key=lambda x: x['datetime'])
 
+    # Check if we have any data
+    if not data:
+        return [{'name': 'No Data', 'description': 'No mood entries were found for this time period.'}]
+
     # 1. Average Mood Rating
     total_ratings = [entry['rating'] for entry in data]
     average_mood = sum(total_ratings) / len(total_ratings)
@@ -315,9 +319,10 @@ def generate_mood_summary(user_id, start_date, end_date):
     positive_words = get_positive_words()
     positive_word_count = 0
     for entry in data:
-        comment = entry['comment'].lower()
-        words = set(re.findall(r'\b\w+\b', comment))
-        positive_word_count += len(words.intersection(positive_words))
+        if entry['comment']:
+            comment = entry['comment'].lower()
+            words = set(re.findall(r'\b\w+\b', comment))
+            positive_word_count += len(words.intersection(positive_words))
 
     # 7. Sleep and Mood Correlation
     sleep_related_entries = [entry for entry in data if 'good sleep' in entry['activities']]
@@ -359,7 +364,7 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_weekend_mood = None
 
     # 13. Early Riser Effect
-    early_riser_entries = [entry for entry in data if 'woke up early' in entry['comment'].lower()]
+    early_riser_entries = [entry for entry in data if entry['comment'] and 'woke up early' in entry['comment'].lower()]
     if early_riser_entries:
         early_riser_ratings = [entry['rating'] for entry in early_riser_entries]
         avg_early_riser_mood = sum(early_riser_ratings) / len(early_riser_ratings)
@@ -367,7 +372,7 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_early_riser_mood = None
 
     # 14. Work Satisfaction Influence
-    work_related_entries = [entry for entry in data if 'work' in entry['comment'].lower()]
+    work_related_entries = [entry for entry in data if entry['comment'] and 'work' in entry['comment'].lower()]
     if work_related_entries:
         work_ratings = [entry['rating'] for entry in work_related_entries]
         avg_work_mood = sum(work_ratings) / len(work_ratings)
@@ -375,7 +380,7 @@ def generate_mood_summary(user_id, start_date, end_date):
         avg_work_mood = None
 
     # 15. Family Time Impact
-    family_related_entries = [entry for entry in data if any(word in entry['comment'].lower() for word in ['family', 'kid', 'son', 'daughter', 'mom', 'dad', 'father', 'mother'])]
+    family_related_entries = [entry for entry in data if entry['comment'] and any(word in entry['comment'].lower() for word in ['family', 'kid', 'son', 'daughter', 'mom', 'dad', 'father', 'mother'])]
     if family_related_entries:
         family_ratings = [entry['rating'] for entry in family_related_entries]
         avg_family_mood = sum(family_ratings) / len(family_ratings)
@@ -386,9 +391,10 @@ def generate_mood_summary(user_id, start_date, end_date):
     progress_keywords = ['progress', 'built', 'started', 'improvement', 'developed', 'made', 'set up', 'fixed', 'got', 'solved', 'showed', 'effort']
     progress_entries = []
     for entry in data:
-        comment = entry['comment'].lower()
-        if any(keyword in comment for keyword in progress_keywords):
-            progress_entries.append(entry)
+        if entry['comment']:
+            comment = entry['comment'].lower()
+            if any(keyword in comment for keyword in progress_keywords):
+                progress_entries.append(entry)
 
     if progress_entries:
         progress_ratings = [entry['rating'] for entry in progress_entries]
@@ -400,24 +406,31 @@ def generate_mood_summary(user_id, start_date, end_date):
     stress_words = get_stress_words()
     stress_word_count = 0
     for entry in data:
-        comment = entry['comment'].lower()
-        words = set(re.findall(r'\b\w+\b', comment))
-        stress_word_count += len(words.intersection(stress_words))
+        if entry['comment']:
+            comment = entry['comment'].lower()
+            words = set(re.findall(r'\b\w+\b', comment))
+            stress_word_count += len(words.intersection(stress_words))
 
     # 18. Positive Outlook Percentage
     positive_days = [entry for entry in data if entry['rating'] >= 3]
     positive_percentage = (len(positive_days) / len(data)) * 100
 
-    # 19. Most Detailed Journal Entry
-    most_detailed_entry = max(data, key=lambda x: len(x['comment']))
-    most_detailed_day = most_detailed_entry['datetime'].strftime('%A, %B %d, %Y')
-    most_detailed_comment = most_detailed_entry['comment']
+    # Initialize statistics list before using it
+    statistics = []
 
     # Now, create a list of dictionaries with name-description pairs
     statistics = [
         {'name': 'Average Mood Rating', 'description': f'Your average mood rating this week was {average_mood:.2f}.'},
         {'name': 'Highest Mood Day', 'description': f'On {highest_mood_day}, you had your highest mood rating of {highest_mood_rating}. You mentioned: "{highest_mood_comment}"'},
     ]
+
+    # 19. Most Detailed Journal Entry
+    entries_with_comments = [entry for entry in data if entry['comment'] is not None]
+    if entries_with_comments:
+        most_detailed_entry = max(entries_with_comments, key=lambda x: len(x['comment']))
+        most_detailed_day = most_detailed_entry['datetime'].strftime('%A, %B %d, %Y')
+        most_detailed_comment = most_detailed_entry['comment']
+        statistics.append({'name': 'Most Detailed Journal Entry', 'description': f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"'})
 
     if mood_improvement is not None:
         statistics.append({'name': 'Mood Improvement', 'description': f'Your mood changed by {mood_improvement:.1f}% compared to the previous week.'})
@@ -444,7 +457,6 @@ def generate_mood_summary(user_id, start_date, end_date):
     if avg_progress_mood is not None:
         statistics.append({'name': 'Progress Towards Goals', 'description': f'Making progress on your goals raised your mood to an average of {avg_progress_mood:.2f}.'})
     statistics.append({'name': 'Positive Outlook Percentage', 'description': f'{positive_percentage:.1f}% of your days had a mood rating of 3 or higher.'})
-    statistics.append({'name': 'Most Detailed Journal Entry', 'description': f'Your most detailed entry was on {most_detailed_day}: "{most_detailed_comment}"'})
     
     random_statistics = random.sample(statistics, min(4, len(statistics)))
     return random_statistics
@@ -510,6 +522,12 @@ def main():
     
     for user_id, email, account_level, email_weekly_summary in users:
         moods = get_user_moods(user_id, year, month)
+        
+        # Skip users with no mood data
+        if not moods:
+            print(f"Skipping user {user_id} - no mood data found")
+            continue
+            
         calendar_html = generate_calendar_html(year, month, moods)
         basic_stats = generate_mood_summary(user_id, start_date, end_date)
         

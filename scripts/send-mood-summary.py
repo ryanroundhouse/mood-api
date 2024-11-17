@@ -547,11 +547,27 @@ def main():
         # Get today's date in ISO format
         today_date = datetime.now().date().isoformat()
         
-        # Insert the summary with the current date
+        # Check if an entry already exists for today
         cursor.execute("""
-            INSERT INTO summaries (userId, date, basic, advanced)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, today_date, encrypted_basic_stats, encrypted_insights))
+            SELECT id FROM summaries 
+            WHERE userId = ? AND date = ?
+        """, (user_id, today_date))
+        
+        existing_entry = cursor.fetchone()
+        
+        if existing_entry:
+            # Update existing entry
+            cursor.execute("""
+                UPDATE summaries 
+                SET basic = ?, advanced = ?
+                WHERE userId = ? AND date = ?
+            """, (encrypted_basic_stats, encrypted_insights, user_id, today_date))
+        else:
+            # Insert new entry
+            cursor.execute("""
+                INSERT INTO summaries (userId, date, basic, advanced)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, today_date, encrypted_basic_stats, encrypted_insights))
         
         conn.commit()
         conn.close()

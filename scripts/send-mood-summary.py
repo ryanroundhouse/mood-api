@@ -464,6 +464,7 @@ def generate_mood_summary(user_id, start_date, end_date):
 def get_openai_insights(moods):
     current_date = datetime.now().strftime('%B %d, %Y')
     prompt = """
+    Assume the current date is {current_date}.
     Given the sample data, answer some questions for me. Your response must be in json format with 'Answer#' as the key and the answer as the value for that key!
     The 'Answer#' refers to the question number I've asked you to answer. Mood ratings are on a scale from 0-4. Activities could be considered tags or just things of note that took place that day. Comments are freeform text optionally input from the user.
     Phrase the answers as if you're talking to the person who's mood entries are being analyzed.
@@ -472,7 +473,7 @@ def get_openai_insights(moods):
 
     Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
 
-    Answer3: What's a small win that happened in the past week (assume the current date is {current_date})? The answer to this question should include encouragement to celebrate that small win.
+    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.
 
     Answer4: What's a prediction for the upcoming week you would make for moods (positive prediction only - nothing negative please).
 

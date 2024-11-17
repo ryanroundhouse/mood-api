@@ -462,6 +462,7 @@ def generate_mood_summary(user_id, start_date, end_date):
     return random_statistics
 
 def get_openai_insights(moods):
+    current_date = datetime.now().strftime('%B %d, %Y')
     prompt = """
     Given the sample data, answer some questions for me. Your response must be in json format with 'Answer#' as the key and the answer as the value for that key!
     The 'Answer#' refers to the question number I've asked you to answer. Mood ratings are on a scale from 0-4. Activities could be considered tags or just things of note that took place that day. Comments are freeform text optionally input from the user.
@@ -471,7 +472,7 @@ def get_openai_insights(moods):
 
     Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
 
-    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.
+    Answer3: What's a small win that happened in the past week (assume the current date is {current_date})? The answer to this question should include encouragement to celebrate that small win.
 
     Answer4: What's a prediction for the upcoming week you would make for moods (positive prediction only - nothing negative please).
 
@@ -479,11 +480,13 @@ def get_openai_insights(moods):
     {moods}
     """
 
+    prompt = prompt.format(moods=json.dumps(moods, indent=2), current_date=current_date)
+
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that analyzes mood data."},
-            {"role": "user", "content": prompt.format(moods=json.dumps(moods, indent=2))}
+            {"role": "user", "content": prompt}
         ]
     )
 

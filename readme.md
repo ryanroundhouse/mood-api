@@ -300,7 +300,8 @@ Response:
   "emailDailyNotifications": true,
   "emailWeeklySummary": true,
   "appDailyNotifications": true,
-  "appWeeklySummary": true
+  "appWeeklySummary": true,
+  "appDailyNotificationTime": "20:00"
 }
 ```
 
@@ -321,7 +322,8 @@ Request body:
   "emailDailyNotifications": false, // Optional
   "emailWeeklySummary": true, // Optional
   "appDailyNotifications": false, // Optional
-  "appWeeklySummary": true // Optional
+  "appWeeklySummary": true, // Optional
+  "appDailyNotificationTime": "20:00" // Optional, 24-hour format (HH:mm)
 }
 ```
 
@@ -330,6 +332,7 @@ Notes:
 - All fields are optional. Only include the fields you want to update.
 - `name` must be a non-empty string if provided.
 - All notification settings (`emailDailyNotifications`, `emailWeeklySummary`, `appDailyNotifications`, `appWeeklySummary`) must be boolean values if provided.
+- `appDailyNotificationTime` must be in 24-hour format (HH:mm) if provided. Defaults to "20:00" if not set.
 
 Response:
 
@@ -341,7 +344,7 @@ Response:
 
 Possible errors:
 
-- 400: Validation errors (e.g., invalid data types or empty name)
+- 400: Validation errors (e.g., invalid data types, empty name, or invalid time format)
 - 500: Internal server error
 
 ### Get user activities (Pro/Enterprise only)

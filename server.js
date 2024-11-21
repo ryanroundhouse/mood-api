@@ -104,6 +104,7 @@ db.serialize(() => {
       date TEXT NOT NULL,
       basic TEXT,
       advanced TEXT,
+      appDailyNotificationTime TEXT DEFAULT '20:00',
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
@@ -296,7 +297,8 @@ app.get('/api/user/settings', authenticateToken, (req, res) => {
   db.get(
     `SELECT users.name, users.email, users.accountLevel, 
      user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
-     user_settings.appDailyNotifications, user_settings.appWeeklySummary
+     user_settings.appDailyNotifications, user_settings.appWeeklySummary,
+     user_settings.appDailyNotificationTime
      FROM users 
      LEFT JOIN user_settings ON users.id = user_settings.userId 
      WHERE users.id = ?`,
@@ -319,6 +321,7 @@ app.get('/api/user/settings', authenticateToken, (req, res) => {
         emailWeeklySummary: row.emailWeeklySummary === 1,
         appDailyNotifications: row.appDailyNotifications === 1,
         appWeeklySummary: row.appWeeklySummary === 1,
+        appDailyNotificationTime: row.appDailyNotificationTime || '20:00', // Default to 9 AM if not set
       };
 
       logger.info(`User settings fetched for user: ${userId}`);
@@ -337,6 +340,9 @@ app.put(
     body('emailWeeklySummary').optional().isBoolean(),
     body('appDailyNotifications').optional().isBoolean(),
     body('appWeeklySummary').optional().isBoolean(),
+    body('appDailyNotificationTime')
+      .optional()
+      .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/), // HH:mm format
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -351,6 +357,7 @@ app.put(
       emailWeeklySummary,
       appDailyNotifications,
       appWeeklySummary,
+      appDailyNotificationTime,
     } = req.body;
 
     db.serialize(() => {
@@ -388,6 +395,11 @@ app.put(
       if (appWeeklySummary !== undefined) {
         updates.push('appWeeklySummary = ?');
         values.push(appWeeklySummary ? 1 : 0);
+      }
+
+      if (appDailyNotificationTime !== undefined) {
+        updates.push('appDailyNotificationTime = ?');
+        values.push(appDailyNotificationTime);
       }
 
       if (updates.length > 0) {

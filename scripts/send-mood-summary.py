@@ -287,7 +287,10 @@ def generate_mood_summary(user_id, start_date, end_date):
     if last_week and previous_week:
         last_week_avg = sum(entry['rating'] for entry in last_week) / len(last_week)
         previous_week_avg = sum(entry['rating'] for entry in previous_week) / len(previous_week)
-        mood_improvement = ((last_week_avg - previous_week_avg) / previous_week_avg) * 100
+        if previous_week_avg != 0:
+            mood_improvement = ((last_week_avg - previous_week_avg) / previous_week_avg) * 100
+        else:
+            mood_improvement = None
     else:
         mood_improvement = None
 

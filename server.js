@@ -20,6 +20,9 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 // Initialize database
 initializeDatabase();
 
+// Trust proxy settings (add this before other middleware)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

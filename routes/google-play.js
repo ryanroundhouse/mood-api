@@ -165,6 +165,23 @@ router.post('/pubsub', async (req, res) => {
 
     // Handle different notification types
     switch (notificationType) {
+      case 1: // SUBSCRIPTION_CANCELED
+      case 3: // Assuming 3 is also a cancellation type in your setup
+        // Mark subscription as canceled and set accountLevel to 'basic'
+        db.run(
+          `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
+          [subscriptionId],
+          (err) => {
+            if (err) {
+              logger.error('Error updating user account level to basic:', err);
+            } else {
+              logger.info(
+                `User with subscriptionId ${subscriptionId} downgraded to basic`
+              );
+            }
+          }
+        );
+        break;
       case 'SUBSCRIPTION_RECOVERED':
       case 'SUBSCRIPTION_RENEWED':
       case 'SUBSCRIPTION_PURCHASED':
@@ -183,23 +200,6 @@ router.post('/pubsub', async (req, res) => {
           }
         );
         break;
-      case 'SUBSCRIPTION_CANCELED':
-        // Mark subscription as canceled and set accountLevel to 'basic'
-        db.run(
-          `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
-          (err) => {
-            if (err) {
-              logger.error('Error updating user account level to basic:', err);
-            } else {
-              logger.info(
-                `User with subscriptionId ${subscriptionId} downgraded to basic`
-              );
-            }
-          }
-        );
-        break;
-      // Add more cases as needed
       default:
         logger.warn('Unhandled notification type:', notificationType);
     }

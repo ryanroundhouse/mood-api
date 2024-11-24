@@ -23,8 +23,20 @@ const androidpublisher = google.androidpublisher('v3');
 const debugAuth = async (auth, type = 'unknown') => {
   try {
     const authClient = await auth.getClient();
+
+    // Log the raw client to see its structure
+    logger.info(`${type} Raw Auth Client:`, {
+      properties: Object.keys(authClient),
+      credentials: authClient.credentials,
+      jsonContent: authClient.jsonContent, // Some clients store info here
+      key: authClient.key, // Some store it here
+      email: authClient.email, // Try different property names
+      serviceAccountEmail: authClient.serviceAccountEmail,
+      client_email: authClient._clientEmail || authClient.client_email,
+    });
+
     logger.info(`${type} Auth Client Details:`, {
-      clientEmail: authClient._clientEmail,
+      clientEmail: authClient._clientEmail || authClient.client_email,
       keyId: authClient._keyId,
       projectId: authClient.projectId,
       scopes: authClient.scopes,
@@ -47,10 +59,6 @@ const debugAuth = async (auth, type = 'unknown') => {
       stack: error.stack,
       code: error.code,
       details: error.response?.data,
-      name: error.name,
-      statusCode: error.response?.status,
-      statusText: error.response?.statusText,
-      errorResponse: error.response?.data?.error,
     });
     throw error;
   }

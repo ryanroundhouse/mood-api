@@ -69,12 +69,12 @@ const verifyPurchaseToken = async (req, res, next) => {
 router.post(
   '/verify-purchase',
   strictLimiter,
+  authenticateToken,
   [
     body('purchaseToken').notEmpty(),
     body('productId').notEmpty(),
     body('packageName').notEmpty(),
   ],
-  //   verifyPurchaseToken,
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -82,7 +82,6 @@ router.post(
     }
 
     try {
-      // Update user's account level based on the product purchased
       const userId = req.user.id;
       const productId = req.body.productId;
       const orderId = req.purchaseData.orderId; // Assuming orderId is the subscription ID
@@ -167,7 +166,7 @@ router.post('/pubsub', async (req, res) => {
     // Handle different notification types
     switch (notificationType) {
       case 1: // SUBSCRIPTION_CANCELED
-      case 3: // Assuming 3 is also a cancellation type in your setup
+      case 3: // SUBSCRIPTION_EXPIRED
         // Mark subscription as canceled and set accountLevel to 'basic'
         db.run(
           `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
@@ -178,6 +177,22 @@ router.post('/pubsub', async (req, res) => {
             } else {
               logger.info(
                 `User with subscriptionId ${subscriptionId} downgraded to basic`
+              );
+            }
+          }
+        );
+        break;
+      case 4: // SUBSCRIPTION_RESTARTED
+        // Update subscription status to active and set accountLevel to 'pro'
+        db.run(
+          `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
+          [subscriptionId],
+          (err) => {
+            if (err) {
+              logger.error('Error updating user account level to pro:', err);
+            } else {
+              logger.info(
+                `User with subscriptionId ${subscriptionId} upgraded to pro (subscription restarted)`
               );
             }
           }
@@ -202,7 +217,7 @@ router.post('/pubsub', async (req, res) => {
         );
         break;
       default:
-        logger.warn('Unhandled notification type:', notificationType);
+        logger.warn('Unhandled notification type:', { notificationType });
     }
 
     res
@@ -215,56 +230,63 @@ router.post('/pubsub', async (req, res) => {
 });
 
 // Endpoint to get subscription status
-router.get('/subscription-status', strictLimiter, async (req, res) => {
-  try {
-    const userId = req.user.id;
+router.get(
+  '/subscription-status',
+  strictLimiter,
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
 
-    db.get(
-      `SELECT googlePlaySubscriptionId, accountLevel FROM users WHERE id = ?`,
-      [userId],
-      async (err, user) => {
-        if (err) {
-          logger.error('Error fetching user subscription status:', err);
-          return res.status(500).json({ error: 'Internal server error' });
+      db.get(
+        `SELECT googlePlaySubscriptionId, accountLevel FROM users WHERE id = ?`,
+        [userId],
+        async (err, user) => {
+          if (err) {
+            logger.error('Error fetching user subscription status:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+
+          if (!user || !user.googlePlaySubscriptionId) {
+            return res.json({ status: 'no_subscription' });
+          }
+
+          try {
+            // Get and debug Play Store auth client for subscription status
+            const authClient = await debugAuth(playAuth, 'Play');
+
+            const response = await androidpublisher.purchases.subscriptions.get(
+              {
+                auth: authClient,
+                packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+                subscriptionId: user.googlePlaySubscriptionId,
+                token: user.googlePlaySubscriptionId,
+              }
+            );
+
+            res.json({
+              status: 'active',
+              expiryTimeMillis: response.data.expiryTimeMillis,
+              autoRenewing: response.data.autoRenewing,
+              accountLevel: user.accountLevel,
+            });
+          } catch (error) {
+            logger.error(
+              'Error fetching subscription details from Google Play:',
+              error
+            );
+            res.json({
+              status: 'error',
+              accountLevel: user.accountLevel,
+            });
+          }
         }
-
-        if (!user || !user.googlePlaySubscriptionId) {
-          return res.json({ status: 'no_subscription' });
-        }
-
-        try {
-          // Get and debug Play Store auth client for subscription status
-          const authClient = await debugAuth(playAuth, 'Play');
-
-          const response = await androidpublisher.purchases.subscriptions.get({
-            auth: authClient,
-            packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-            subscriptionId: user.googlePlaySubscriptionId,
-            token: user.googlePlaySubscriptionId,
-          });
-
-          res.json({
-            status: 'active',
-            expiryTimeMillis: response.data.expiryTimeMillis,
-            autoRenewing: response.data.autoRenewing,
-            accountLevel: user.accountLevel,
-          });
-        } catch (error) {
-          logger.error(
-            'Error fetching subscription details from Google Play:',
-            error
-          );
-          res.json({
-            status: 'error',
-            accountLevel: user.accountLevel,
-          });
-        }
-      }
-    );
-  } catch (error) {
-    logger.error('Error checking subscription status:', error);
-    res.status(500).json({ error: 'Error checking subscription status' });
+      );
+    } catch (error) {
+      logger.error('Error checking subscription status:', error);
+      res.status(500).json({ error: 'Error checking subscription status' });
+    }
   }
-});
+);
 
 module.exports = router;

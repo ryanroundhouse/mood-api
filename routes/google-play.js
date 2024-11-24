@@ -96,8 +96,8 @@ router.post(
 
       // Update using purchaseToken instead of orderId
       db.run(
-        `UPDATE users SET accountLevel = ?, googlePlaySubscriptionId = ? WHERE id = ?`,
-        [accountLevel, purchaseToken, userId],
+        `UPDATE users SET googlePlaySubscriptionId = ? WHERE id = ?`,
+        [purchaseToken, userId],
         (err) => {
           if (err) {
             logger.error('Error updating user account level:', err);

@@ -95,37 +95,67 @@ router.post(
 
 // Endpoint to handle subscription status updates from Google Play
 router.post('/pubsub', async (req, res) => {
-  logger.info('Received Pub/Sub message headers:', req.headers);
+  // Log every incoming request
+  logger.info('Incoming Pub/Sub request', {
+    headers: req.headers,
+    body: JSON.stringify(req.body),
+  });
 
   try {
+    // Validate message exists
     if (!req.body || !req.body.message) {
-      logger.error('Invalid Pub/Sub message format:', req.body);
+      logger.error('Missing message in request body:', req.body);
       return res.status(200).json({ error: 'Invalid message format' });
     }
 
-    // Decode the Pub/Sub message
-    const messageData = Buffer.from(req.body.message.data, 'base64').toString();
-    logger.info('Decoded Pub/Sub message:', messageData);
+    // Log the raw message data
+    logger.info('Raw message data:', req.body.message.data);
 
-    const message = JSON.parse(messageData);
+    // Try decoding
+    let messageData;
+    try {
+      messageData = Buffer.from(req.body.message.data, 'base64').toString();
+      logger.info('Decoded message:', messageData);
+    } catch (decodeError) {
+      logger.error('Failed to decode base64 message:', decodeError);
+      return res.status(200).json({ error: 'Invalid message encoding' });
+    }
 
+    // Try parsing JSON
+    let message;
+    try {
+      message = JSON.parse(messageData);
+      logger.info('Parsed message:', message);
+    } catch (parseError) {
+      logger.error('Failed to parse JSON:', parseError);
+      return res.status(200).json({ error: 'Invalid JSON format' });
+    }
+
+    // Validate subscription notification
     if (!message || !message.subscriptionNotification) {
       logger.error('Invalid notification format:', message);
       return res.status(200).json({ error: 'Invalid notification format' });
     }
 
-    // Your existing webhook logic
     const { subscriptionId, purchaseToken, notificationType } =
       message.subscriptionNotification;
 
+    logger.info('Processing notification:', {
+      subscriptionId,
+      notificationType,
+    });
+
     // Verify the subscription status
     const authClient = await auth.getClient();
+    logger.info('Got auth client');
+
     const response = await androidpublisher.purchases.subscriptions.get({
       auth: authClient,
       packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
       subscriptionId: subscriptionId,
       token: purchaseToken,
     });
+    logger.info('Got subscription response:', response.data);
 
     // Handle different notification types
     switch (notificationType) {

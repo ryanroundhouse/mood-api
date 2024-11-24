@@ -24,34 +24,7 @@ const debugAuth = async (auth, type = 'unknown') => {
   try {
     const authClient = await auth.getClient();
 
-    // Log the raw client to see its structure
-    logger.info(`${type} Raw Auth Client:`, {
-      properties: Object.keys(authClient),
-      credentials: authClient.credentials,
-      jsonContent: authClient.jsonContent, // Some clients store info here
-      key: authClient.key, // Some store it here
-      email: authClient.email, // Try different property names
-      serviceAccountEmail: authClient.serviceAccountEmail,
-      client_email: authClient._clientEmail || authClient.client_email,
-    });
-
-    logger.info(`${type} Auth Client Details:`, {
-      clientEmail: authClient._clientEmail || authClient.client_email,
-      keyId: authClient._keyId,
-      projectId: authClient.projectId,
-      scopes: authClient.scopes,
-      keyFile:
-        type === 'Play'
-          ? process.env.GOOGLE_PLAY_KEY_FILE
-          : process.env.GOOGLE_PUBSUB_KEY_FILE,
-    });
-
     const token = await authClient.getAccessToken();
-    logger.info(`${type} Access Token Details:`, {
-      exists: !!token.token,
-      expiryDate: token.expiryDate,
-      token: token.token.substring(0, 10) + '...',
-    });
     return authClient;
   } catch (error) {
     logger.error(`${type} Auth Debug Error:`, {
@@ -71,13 +44,6 @@ const verifyPurchaseToken = async (req, res, next) => {
 
     // Get and debug Play Store auth client
     const authClient = await debugAuth(playAuth, 'Play');
-
-    logger.info('Making Google Play API request:', {
-      packageName,
-      productId,
-      tokenLength: purchaseToken?.length,
-      endpoint: 'purchases.products.get',
-    });
 
     const response = await androidpublisher.purchases.products.get({
       auth: authClient,
@@ -165,12 +131,9 @@ router.post('/pubsub', async (req, res) => {
       return res.status(200).json({ error: 'Invalid message format' });
     }
 
-    logger.info('Raw message data:', req.body.message.data);
-
     let messageData;
     try {
       messageData = Buffer.from(req.body.message.data, 'base64').toString();
-      logger.info('Decoded message:', messageData);
     } catch (decodeError) {
       logger.error('Failed to decode base64 message:', decodeError);
       return res.status(200).json({ error: 'Invalid message encoding' });
@@ -179,7 +142,6 @@ router.post('/pubsub', async (req, res) => {
     let message;
     try {
       message = JSON.parse(messageData);
-      logger.info('Parsed message:', message);
     } catch (parseError) {
       logger.error('Failed to parse JSON:', parseError);
       return res.status(200).json({ error: 'Invalid JSON format' });
@@ -193,65 +155,16 @@ router.post('/pubsub', async (req, res) => {
     const { subscriptionId, purchaseToken, notificationType } =
       message.subscriptionNotification;
 
-    logger.info('Processing notification:', {
+    // Log the contents of subscriptionId, purchaseToken, and notificationType
+    logger.info('Subscription Notification Details:', {
       subscriptionId,
+      purchaseToken,
       notificationType,
     });
 
-    // Get and debug Play Store auth client for subscription verification
-    const authClient = await debugAuth(playAuth, 'Play');
-
-    logger.info('Making Play Store API request:', {
-      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-      subscriptionId,
-      purchaseToken: purchaseToken.substring(0, 10) + '...',
-    });
-
-    const response = await androidpublisher.purchases.subscriptions.get({
-      auth: authClient,
-      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-      subscriptionId: subscriptionId,
-      token: purchaseToken,
-    });
-
-    logger.info('Got subscription response:', response.data);
-
-    // Handle different notification types
-    switch (notificationType) {
-      case 1: // Subscription recovered
-      case 2: // Renewal success
-        // Update user's subscription status
-        db.run(
-          `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
-          (err) => {
-            if (err) {
-              logger.error('Error updating subscription status:', err);
-            }
-          }
-        );
-        break;
-
-      case 3: // Subscription canceled
-      case 4: // Subscription on hold
-      case 6: // Subscription expired
-        // Downgrade user's account
-        db.run(
-          `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
-          (err) => {
-            if (err) {
-              logger.error('Error downgrading user account:', err);
-            }
-          }
-        );
-        break;
-
-      default:
-        logger.info(`Unhandled notification type: ${notificationType}`);
-    }
-
-    res.status(200).json({ message: 'Webhook processed successfully' });
+    res
+      .status(200)
+      .json({ message: 'Webhook received and logged successfully' });
   } catch (error) {
     logger.error('Error processing Pub/Sub message:', error);
     return res.status(200).json({ error: 'Error processing message' });

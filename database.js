@@ -17,7 +17,8 @@ function initializeDatabase() {
         resetPasswordExpires INTEGER,
         accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise')),
         stripeCustomerId TEXT,
-        stripeSubscriptionId TEXT
+        stripeSubscriptionId TEXT,
+        googlePlaySubscriptionId TEXT
       )
     `);
 

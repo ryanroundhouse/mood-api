@@ -129,7 +129,7 @@ Possible errors:
 
 ### Refresh access token
 
-- **POST** `/api/refresh-token`
+- **POST** `/api/auth/refresh-token`
 
 Request:
 
@@ -156,7 +156,7 @@ Possible errors:
 
 ### User logout
 
-- **POST** `/api/logout`
+- **POST** `/api/auth/logout`
 
 Request:
 
@@ -508,6 +508,165 @@ Possible errors:
 - 500: Internal server error
 
 ### Get all user's summaries
+
+- **GET** `/api/user/summaries`
+
+Response:
+
+```json
+[
+  {
+    "date": "2024-03-21",
+    "basicInsights": [
+      {
+        "name": "Physical Activity Benefits",
+        "description": "Engaging in physical activities increased your mood to an average of 3.00."
+      }
+      // More basic insight objects...
+    ],
+    "aiInsights": [
+      {
+        "name": "Mood Insights",
+        "description": "Your mood ratings align well with activities and comments."
+      }
+      // More AI-generated insight objects...
+    ]
+  },
+  {
+    "date": "2024-03-14",
+    "basicInsights": [...],
+    "aiInsights": [...]
+  }
+  // More weekly summaries...
+]
+```
+
+Notes:
+
+- Returns all available summaries for the user, ordered by date (newest first)
+- Each summary includes both basic and AI-generated insights
+- Insights are automatically decrypted before being sent
+
+Possible errors:
+
+- 404: No summaries found
+- 500: Internal server error
+
+### Verify Google Play purchase
+
+- **POST** `/api/google-play/verify-purchase`
+
+Request:
+
+```json
+{
+  "purchaseToken": "token_from_google_play",
+  "productId": "pro_subscription",
+  "packageName": "com.your.app"
+}
+```
+
+Response:
+
+```json
+{
+  "message": "Purchase verified and processed successfully",
+  "accountLevel": "pro"
+}
+```
+
+Possible errors:
+
+- 400: Invalid purchase
+- 500: Error verifying purchase
+
+### Get Google Play subscription status
+
+- **GET** `/api/google-play/subscription-status`
+
+Response:
+
+```json
+{
+  "status": "active",
+  "expiryTimeMillis": "1234567890000",
+  "autoRenewing": true,
+  "accountLevel": "pro"
+}
+```
+
+Possible errors:
+
+- 404: Subscription not found
+- 500: Error checking subscription status
+
+### Google Play webhook
+
+- **POST** `/api/google-play/webhook`
+
+Note: This endpoint is for Google Play Server notifications and should not be called directly.
+
+Response:
+
+```json
+{
+  "message": "Webhook processed successfully"
+}
+```
+
+Possible errors:
+
+- 400: Invalid notification format
+- 500: Error processing webhook
+
+### Submit mood with auth code
+
+- **POST** `/api/mood/:authCode`
+
+Request:
+
+```json
+{
+  "rating": 4,
+  "comment": "Feeling pretty good today!",
+  "activities": ["exercise", "reading"]
+}
+```
+
+Response:
+
+```json
+{
+  "message": "Mood posted successfully"
+}
+```
+
+Possible errors:
+
+- 401: Invalid auth code
+- 401: Auth code has expired
+- 500: Error posting mood
+
+### Stripe webhook
+
+- **POST** `/api/stripe/webhook`
+
+Note: This endpoint is for Stripe webhook notifications and should not be called directly.
+
+Response:
+
+```json
+{
+  "received": true
+}
+```
+
+Possible errors:
+
+- 400: Webhook signature verification failed
+- 500: Internal server error
+
+### Get all user summaries
 
 - **GET** `/api/user/summaries`
 

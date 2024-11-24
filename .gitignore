@@ -94,3 +94,4 @@ Thumbs.db
 database.sqlite
 scripts/my_env
 .venv
+moodful-gcloud-api-key.json

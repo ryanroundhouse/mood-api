@@ -13,6 +13,35 @@ const auth = new google.auth.GoogleAuth({
 
 const androidpublisher = google.androidpublisher('v3');
 
+// At the top of the file, add this debug function
+const debugAuth = async (auth) => {
+  try {
+    const authClient = await auth.getClient();
+    logger.info('Auth Client Details:', {
+      clientEmail: authClient._clientEmail,
+      keyId: authClient._keyId,
+      projectId: authClient.projectId,
+      scopes: authClient.scopes,
+      keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
+      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+    });
+
+    // Test token generation
+    const token = await authClient.getAccessToken();
+    logger.info('Access Token Details:', {
+      exists: !!token.token,
+      expiryDate: token.expiryDate,
+    });
+  } catch (error) {
+    logger.error('Auth Debug Error:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      details: error.response?.data,
+    });
+  }
+};
+
 // Middleware to verify purchase token
 const verifyPurchaseToken = async (req, res, next) => {
   try {
@@ -176,9 +205,11 @@ router.post('/pubsub', async (req, res) => {
       notificationType,
     });
 
-    // Verify the subscription status
+    logger.info('Starting auth debug...');
+    await debugAuth(auth);
+
     const authClient = await auth.getClient();
-    logger.info('Got auth client');
+    logger.info('Got auth client with email:', authClient._clientEmail);
 
     const response = await androidpublisher.purchases.subscriptions.get({
       auth: authClient,

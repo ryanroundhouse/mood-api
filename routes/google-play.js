@@ -5,6 +5,7 @@ const { google } = require('googleapis');
 const logger = require('../utils/logger');
 const { strictLimiter } = require('../middleware/rateLimiter');
 const { db } = require('../database');
+const { authenticateToken } = require('../middleware/auth');
 
 // Configure Google Play API client
 const playAuth = new google.auth.GoogleAuth({

@@ -88,7 +88,7 @@ router.post(
       const purchaseToken = req.body.purchaseToken;
 
       let accountLevel = 'basic';
-      if (productId === 'pro_subscription') {
+      if (productId === 'com.gencorp.moodful_app.pro.monthly') {
         accountLevel = 'pro';
       } else if (productId === 'enterprise_subscription') {
         accountLevel = 'enterprise';
@@ -168,32 +168,32 @@ router.post('/pubsub', async (req, res) => {
     switch (notificationType) {
       case 1: // SUBSCRIPTION_CANCELED
       case 3: // SUBSCRIPTION_EXPIRED
-        // Mark subscription as canceled and set accountLevel to 'basic'
+        // Update to use purchaseToken instead of subscriptionId
         db.run(
           `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
+          [purchaseToken],
           (err) => {
             if (err) {
               logger.error('Error updating user account level to basic:', err);
             } else {
               logger.info(
-                `User with subscriptionId ${subscriptionId} downgraded to basic`
+                `User with purchase token ${purchaseToken} downgraded to basic`
               );
             }
           }
         );
         break;
       case 4: // SUBSCRIPTION_RESTARTED
-        // Update subscription status to active and set accountLevel to 'pro'
+        // Update to use purchaseToken
         db.run(
           `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
+          [purchaseToken],
           (err) => {
             if (err) {
               logger.error('Error updating user account level to pro:', err);
             } else {
               logger.info(
-                `User with subscriptionId ${subscriptionId} upgraded to pro (subscription restarted)`
+                `User with purchase token ${purchaseToken} upgraded to pro (subscription restarted)`
               );
             }
           }
@@ -205,13 +205,13 @@ router.post('/pubsub', async (req, res) => {
         // Update subscription status to active and set accountLevel to 'pro'
         db.run(
           `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
-          [subscriptionId],
+          [purchaseToken],
           (err) => {
             if (err) {
               logger.error('Error updating user account level to pro:', err);
             } else {
               logger.info(
-                `User with subscriptionId ${subscriptionId} upgraded to pro`
+                `User with purchase token ${purchaseToken} upgraded to pro`
               );
             }
           }

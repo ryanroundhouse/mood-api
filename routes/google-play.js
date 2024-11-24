@@ -1,23 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const jwt = require('jsonwebtoken');
-const { google } = require('googleapis'); // Make sure to install: npm install googleapis
-const winston = require('winston');
+const { google } = require('googleapis');
+const logger = require('../utils/logger');
 const { strictLimiter } = require('../middleware/rateLimiter');
-
-// Reuse the logger from the main application
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: 'app.log' }),
-  ],
-});
 
 // Configure Google Play API client
 const auth = new google.auth.GoogleAuth({
@@ -108,16 +94,29 @@ router.post(
 );
 
 // Endpoint to handle subscription status updates from Google Play
-router.post('/webhook', strictLimiter, async (req, res) => {
-  try {
-    const notification = req.body;
+router.post('/pubsub', async (req, res) => {
+  logger.info('Received Pub/Sub message headers:', req.headers);
 
-    if (!notification || !notification.subscriptionNotification) {
-      return res.status(400).json({ error: 'Invalid notification format' });
+  try {
+    if (!req.body || !req.body.message) {
+      logger.error('Invalid Pub/Sub message format:', req.body);
+      return res.status(200).json({ error: 'Invalid message format' });
     }
 
+    // Decode the Pub/Sub message
+    const messageData = Buffer.from(req.body.message.data, 'base64').toString();
+    logger.info('Decoded Pub/Sub message:', messageData);
+
+    const message = JSON.parse(messageData);
+
+    if (!message || !message.subscriptionNotification) {
+      logger.error('Invalid notification format:', message);
+      return res.status(200).json({ error: 'Invalid notification format' });
+    }
+
+    // Your existing webhook logic
     const { subscriptionId, purchaseToken, notificationType } =
-      notification.subscriptionNotification;
+      message.subscriptionNotification;
 
     // Verify the subscription status
     const authClient = await auth.getClient();
@@ -165,8 +164,9 @@ router.post('/webhook', strictLimiter, async (req, res) => {
 
     res.status(200).json({ message: 'Webhook processed successfully' });
   } catch (error) {
-    logger.error('Error processing Google Play webhook:', error);
-    res.status(500).json({ error: 'Error processing webhook' });
+    logger.error('Error processing Pub/Sub message:', error);
+    // Return 200 even for errors to prevent retries
+    return res.status(200).json({ error: 'Error processing message' });
   }
 });
 

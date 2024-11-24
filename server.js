@@ -57,7 +57,14 @@ app.use('/api/mood', moodRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logger.error(err.stack);
+  logger.error('Error details:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+  });
   res.status(500).json({ error: 'Something went wrong!' });
 });
 

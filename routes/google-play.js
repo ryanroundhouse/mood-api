@@ -17,7 +17,38 @@ const androidpublisher = google.androidpublisher('v3');
 const verifyPurchaseToken = async (req, res, next) => {
   try {
     const { purchaseToken, productId, packageName } = req.body;
+
+    // Log the credentials being used
     const authClient = await auth.getClient();
+    logger.info('Auth Client Details:', {
+      keyId: authClient._clientId,
+      email: authClient._clientEmail,
+      scopes: authClient.scopes,
+      projectId: authClient.projectId,
+    });
+
+    // Log the request details
+    logger.info('Making Google Play API request:', {
+      packageName,
+      productId,
+      tokenLength: purchaseToken?.length,
+      endpoint: 'purchases.products.get',
+    });
+
+    // Test the auth explicitly
+    try {
+      const tokens = await authClient.getAccessToken();
+      logger.info('Successfully got access token:', {
+        tokenExists: !!tokens.token,
+        expiryDate: tokens.expiryDate,
+      });
+    } catch (authError) {
+      logger.error('Failed to get access token:', {
+        error: authError.message,
+        code: authError.code,
+        details: authError.response?.data,
+      });
+    }
 
     const response = await androidpublisher.purchases.products.get({
       auth: authClient,

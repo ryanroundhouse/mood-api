@@ -9,7 +9,7 @@ A RESTful API for a mood tracking application built with Node.js, Express, and S
 - Password reset functionality
 - CRUD operations for mood entries
 - Custom user activities for Pro and Enterprise users
-- Stripe integration for subscription management
+- Stripe and Google Play integration for subscription management
 - Data validation and error handling
 - Rate limiting for sensitive routes
 - Logging with Winston
@@ -22,6 +22,7 @@ A RESTful API for a mood tracking application built with Node.js, Express, and S
 - Stripe account
 - Mailgun account
 - reCAPTCHA v3 setup
+- Google Play Developer account
 
 ## Environment Variables
 
@@ -37,6 +38,9 @@ Set the following environment variables:
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook secret
 - `RECAPTCHA_SECRET_KEY`: reCAPTCHA v3 secret key
 - `MOOD_SITE_URL`: Base URL of your site (default: http://localhost:3000)
+- `GOOGLE_PLAY_KEY_FILE`: Path to the Google Play service account key file
+- `GOOGLE_PUBSUB_KEY_FILE`: Path to the Google Pub/Sub service account key file
+- `GOOGLE_PLAY_PACKAGE_NAME`: Package name of your app on Google Play
 
 ## Installation
 
@@ -575,10 +579,37 @@ Response:
 }
 ```
 
+Notes:
+
+- This endpoint verifies the purchase with Google Play and updates the user's `accountLevel` and `googlePlaySubscriptionId` in the database.
+
 Possible errors:
 
 - 400: Invalid purchase
 - 500: Error verifying purchase
+
+### Google Play webhook
+
+- **POST** `/api/google-play/pubsub`
+
+Note: This endpoint is for Google Play Server notifications and should not be called directly.
+
+Response:
+
+```json
+{
+  "message": "Webhook processed successfully"
+}
+```
+
+Notes:
+
+- This endpoint handles subscription status updates from Google Play, such as purchase, renewal, recovery, and cancellation, and updates the user's `accountLevel` accordingly.
+
+Possible errors:
+
+- 400: Invalid notification format
+- 500: Error processing webhook
 
 ### Get Google Play subscription status
 
@@ -599,25 +630,6 @@ Possible errors:
 
 - 404: Subscription not found
 - 500: Error checking subscription status
-
-### Google Play webhook
-
-- **POST** `/api/google-play/webhook`
-
-Note: This endpoint is for Google Play Server notifications and should not be called directly.
-
-Response:
-
-```json
-{
-  "message": "Webhook processed successfully"
-}
-```
-
-Possible errors:
-
-- 400: Invalid notification format
-- 500: Error processing webhook
 
 ### Submit mood with auth code
 

@@ -84,6 +84,7 @@ router.post(
       // Update user's account level based on the product purchased
       const userId = req.user.id;
       const productId = req.body.productId;
+      const orderId = req.purchaseData.orderId; // Assuming orderId is the subscription ID
 
       let accountLevel = 'basic';
       if (productId === 'pro_subscription') {
@@ -92,10 +93,10 @@ router.post(
         accountLevel = 'enterprise';
       }
 
-      // Update the user's account level in the database
+      // Update the user's account level and googlePlaySubscriptionId in the database
       db.run(
         `UPDATE users SET accountLevel = ?, googlePlaySubscriptionId = ? WHERE id = ?`,
-        [accountLevel, req.purchaseData.orderId, userId],
+        [accountLevel, orderId, userId],
         (err) => {
           if (err) {
             logger.error('Error updating user account level:', err);
@@ -103,7 +104,7 @@ router.post(
           }
 
           logger.info(
-            `User ${userId} upgraded to ${accountLevel} via Google Play`
+            `User ${userId} upgraded to ${accountLevel} via Google Play with subscription ID ${orderId}`
           );
           res.json({
             message: 'Purchase verified and processed successfully',
@@ -162,9 +163,50 @@ router.post('/pubsub', async (req, res) => {
       notificationType,
     });
 
+    // Handle different notification types
+    switch (notificationType) {
+      case 'SUBSCRIPTION_RECOVERED':
+      case 'SUBSCRIPTION_RENEWED':
+      case 'SUBSCRIPTION_PURCHASED':
+        // Update subscription status to active and set accountLevel to 'pro'
+        db.run(
+          `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
+          [subscriptionId],
+          (err) => {
+            if (err) {
+              logger.error('Error updating user account level to pro:', err);
+            } else {
+              logger.info(
+                `User with subscriptionId ${subscriptionId} upgraded to pro`
+              );
+            }
+          }
+        );
+        break;
+      case 'SUBSCRIPTION_CANCELED':
+        // Mark subscription as canceled and set accountLevel to 'basic'
+        db.run(
+          `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
+          [subscriptionId],
+          (err) => {
+            if (err) {
+              logger.error('Error updating user account level to basic:', err);
+            } else {
+              logger.info(
+                `User with subscriptionId ${subscriptionId} downgraded to basic`
+              );
+            }
+          }
+        );
+        break;
+      // Add more cases as needed
+      default:
+        logger.warn('Unhandled notification type:', notificationType);
+    }
+
     res
       .status(200)
-      .json({ message: 'Webhook received and logged successfully' });
+      .json({ message: 'Webhook received and processed successfully' });
   } catch (error) {
     logger.error('Error processing Pub/Sub message:', error);
     return res.status(200).json({ error: 'Error processing message' });

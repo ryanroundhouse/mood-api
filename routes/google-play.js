@@ -201,6 +201,12 @@ router.post('/pubsub', async (req, res) => {
     // Get and debug Play Store auth client for subscription verification
     const authClient = await debugAuth(playAuth, 'Play');
 
+    logger.info('Making Play Store API request:', {
+      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+      subscriptionId,
+      purchaseToken: purchaseToken.substring(0, 10) + '...',
+    });
+
     const response = await androidpublisher.purchases.subscriptions.get({
       auth: authClient,
       packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,

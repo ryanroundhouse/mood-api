@@ -32,13 +32,13 @@ const debugAuth = async (auth, type = 'unknown') => {
         type === 'Play'
           ? process.env.GOOGLE_PLAY_KEY_FILE
           : process.env.GOOGLE_PUBSUB_KEY_FILE,
-      packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
     });
 
     const token = await authClient.getAccessToken();
     logger.info(`${type} Access Token Details:`, {
       exists: !!token.token,
       expiryDate: token.expiryDate,
+      token: token.token.substring(0, 10) + '...',
     });
     return authClient;
   } catch (error) {
@@ -47,6 +47,10 @@ const debugAuth = async (auth, type = 'unknown') => {
       stack: error.stack,
       code: error.code,
       details: error.response?.data,
+      name: error.name,
+      statusCode: error.response?.status,
+      statusText: error.response?.statusText,
+      errorResponse: error.response?.data?.error,
     });
     throw error;
   }

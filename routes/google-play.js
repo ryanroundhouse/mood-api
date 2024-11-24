@@ -6,39 +6,49 @@ const logger = require('../utils/logger');
 const { strictLimiter } = require('../middleware/rateLimiter');
 
 // Configure Google Play API client
-const auth = new google.auth.GoogleAuth({
+const playAuth = new google.auth.GoogleAuth({
   keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
   scopes: ['https://www.googleapis.com/auth/androidpublisher'],
 });
 
+// Configure Pub/Sub client
+const pubsubAuth = new google.auth.GoogleAuth({
+  keyFile: process.env.GOOGLE_PUBSUB_KEY_FILE,
+  scopes: ['https://www.googleapis.com/auth/pubsub'],
+});
+
 const androidpublisher = google.androidpublisher('v3');
 
-// At the top of the file, add this debug function
-const debugAuth = async (auth) => {
+// Debug function for auth issues
+const debugAuth = async (auth, type = 'unknown') => {
   try {
     const authClient = await auth.getClient();
-    logger.info('Auth Client Details:', {
+    logger.info(`${type} Auth Client Details:`, {
       clientEmail: authClient._clientEmail,
       keyId: authClient._keyId,
       projectId: authClient.projectId,
       scopes: authClient.scopes,
-      keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
+      keyFile:
+        type === 'Play'
+          ? process.env.GOOGLE_PLAY_KEY_FILE
+          : process.env.GOOGLE_PUBSUB_KEY_FILE,
       packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
     });
 
-    // Test token generation
     const token = await authClient.getAccessToken();
-    logger.info('Access Token Details:', {
+    logger.info(`${type} Access Token Details:`, {
       exists: !!token.token,
       expiryDate: token.expiryDate,
     });
+    return authClient;
   } catch (error) {
-    logger.error('Auth Debug Error:', {
+    logger.error(`${type} Auth Debug Error:`, {
       message: error.message,
       stack: error.stack,
       code: error.code,
       details: error.response?.data,
     });
+    throw error;
   }
 };
 
@@ -47,37 +57,15 @@ const verifyPurchaseToken = async (req, res, next) => {
   try {
     const { purchaseToken, productId, packageName } = req.body;
 
-    // Log the credentials being used
-    const authClient = await auth.getClient();
-    logger.info('Auth Client Details:', {
-      keyId: authClient._clientId,
-      email: authClient._clientEmail,
-      scopes: authClient.scopes,
-      projectId: authClient.projectId,
-    });
+    // Get and debug Play Store auth client
+    const authClient = await debugAuth(playAuth, 'Play');
 
-    // Log the request details
     logger.info('Making Google Play API request:', {
       packageName,
       productId,
       tokenLength: purchaseToken?.length,
       endpoint: 'purchases.products.get',
     });
-
-    // Test the auth explicitly
-    try {
-      const tokens = await authClient.getAccessToken();
-      logger.info('Successfully got access token:', {
-        tokenExists: !!tokens.token,
-        expiryDate: tokens.expiryDate,
-      });
-    } catch (authError) {
-      logger.error('Failed to get access token:', {
-        error: authError.message,
-        code: authError.code,
-        details: authError.response?.data,
-      });
-    }
 
     const response = await androidpublisher.purchases.products.get({
       auth: authClient,
@@ -87,7 +75,6 @@ const verifyPurchaseToken = async (req, res, next) => {
     });
 
     if (response.data.purchaseState === 0) {
-      // 0 means purchased
       req.purchaseData = response.data;
       next();
     } else {
@@ -155,23 +142,19 @@ router.post(
 
 // Endpoint to handle subscription status updates from Google Play
 router.post('/pubsub', async (req, res) => {
-  // Log every incoming request
   logger.info('Incoming Pub/Sub request', {
     headers: req.headers,
     body: JSON.stringify(req.body),
   });
 
   try {
-    // Validate message exists
     if (!req.body || !req.body.message) {
       logger.error('Missing message in request body:', req.body);
       return res.status(200).json({ error: 'Invalid message format' });
     }
 
-    // Log the raw message data
     logger.info('Raw message data:', req.body.message.data);
 
-    // Try decoding
     let messageData;
     try {
       messageData = Buffer.from(req.body.message.data, 'base64').toString();
@@ -181,7 +164,6 @@ router.post('/pubsub', async (req, res) => {
       return res.status(200).json({ error: 'Invalid message encoding' });
     }
 
-    // Try parsing JSON
     let message;
     try {
       message = JSON.parse(messageData);
@@ -191,7 +173,6 @@ router.post('/pubsub', async (req, res) => {
       return res.status(200).json({ error: 'Invalid JSON format' });
     }
 
-    // Validate subscription notification
     if (!message || !message.subscriptionNotification) {
       logger.error('Invalid notification format:', message);
       return res.status(200).json({ error: 'Invalid notification format' });
@@ -205,11 +186,8 @@ router.post('/pubsub', async (req, res) => {
       notificationType,
     });
 
-    logger.info('Starting auth debug...');
-    await debugAuth(auth);
-
-    const authClient = await auth.getClient();
-    logger.info('Got auth client with email:', authClient._clientEmail);
+    // Get and debug Play Store auth client for subscription verification
+    const authClient = await debugAuth(playAuth, 'Play');
 
     const response = await androidpublisher.purchases.subscriptions.get({
       auth: authClient,
@@ -217,6 +195,7 @@ router.post('/pubsub', async (req, res) => {
       subscriptionId: subscriptionId,
       token: purchaseToken,
     });
+
     logger.info('Got subscription response:', response.data);
 
     // Handle different notification types
@@ -257,7 +236,6 @@ router.post('/pubsub', async (req, res) => {
     res.status(200).json({ message: 'Webhook processed successfully' });
   } catch (error) {
     logger.error('Error processing Pub/Sub message:', error);
-    // Return 200 even for errors to prevent retries
     return res.status(200).json({ error: 'Error processing message' });
   }
 });
@@ -281,7 +259,9 @@ router.get('/subscription-status', strictLimiter, async (req, res) => {
         }
 
         try {
-          const authClient = await auth.getClient();
+          // Get and debug Play Store auth client for subscription status
+          const authClient = await debugAuth(playAuth, 'Play');
+
           const response = await androidpublisher.purchases.subscriptions.get({
             auth: authClient,
             packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,

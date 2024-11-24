@@ -85,7 +85,7 @@ router.post(
     try {
       const userId = req.user.id;
       const productId = req.body.productId;
-      const orderId = req.purchaseData.orderId; // Assuming orderId is the subscription ID
+      const purchaseToken = req.body.purchaseToken;
 
       let accountLevel = 'basic';
       if (productId === 'pro_subscription') {
@@ -94,10 +94,10 @@ router.post(
         accountLevel = 'enterprise';
       }
 
-      // Update the user's account level and googlePlaySubscriptionId in the database
+      // Update using purchaseToken instead of orderId
       db.run(
         `UPDATE users SET accountLevel = ?, googlePlaySubscriptionId = ? WHERE id = ?`,
-        [accountLevel, orderId, userId],
+        [accountLevel, purchaseToken, userId],
         (err) => {
           if (err) {
             logger.error('Error updating user account level:', err);
@@ -105,7 +105,7 @@ router.post(
           }
 
           logger.info(
-            `User ${userId} upgraded to ${accountLevel} via Google Play with subscription ID ${orderId}`
+            `User ${userId} upgraded to ${accountLevel} via Google Play with subscription ID ${purchaseToken}`
           );
           res.json({
             message: 'Purchase verified and processed successfully',

@@ -66,6 +66,37 @@ const verifyPurchaseToken = async (req, res, next) => {
   }
 };
 
+// Add this new function to handle subscription updates
+const updateSubscriptionStatus = async (
+  purchaseToken,
+  userId,
+  accountLevel
+) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE users SET googlePlaySubscriptionId = ?, accountLevel = ? WHERE id = ?`,
+      [purchaseToken, accountLevel, userId],
+      (err) => {
+        if (err) {
+          logger.error('Error updating subscription status:', {
+            error: err,
+            userId,
+            purchaseToken: purchaseToken.substring(0, 10) + '...',
+          });
+          reject(err);
+        } else {
+          logger.info('Successfully updated subscription status:', {
+            userId,
+            accountLevel,
+            purchaseToken: purchaseToken.substring(0, 10) + '...',
+          });
+          resolve();
+        }
+      }
+    );
+  });
+};
+
 // Endpoint to verify and process a new purchase
 router.post(
   '/verify-purchase',
@@ -91,48 +122,32 @@ router.post(
       const purchaseToken = req.body.purchaseToken;
       const packageName = req.body.packageName;
 
-      logger.info('Starting Google Play purchase verification:', {
-        userId,
-        productId,
-        packageName,
-        purchaseToken: purchaseToken.substring(0, 10) + '...', // Log partial token for security
+      // First verify the purchase with Google Play
+      const authClient = await debugAuth(playAuth, 'Play');
+      const response = await androidpublisher.purchases.subscriptions.get({
+        auth: authClient,
+        packageName: packageName,
+        subscriptionId: productId,
+        token: purchaseToken,
       });
 
-      let accountLevel = 'basic';
-      if (productId === 'com.gencorp.moodful_app.pro.monthly') {
-        accountLevel = 'pro';
-      } else if (productId === 'enterprise_subscription') {
-        accountLevel = 'enterprise';
+      // Check if subscription is active
+      if (response.data.paymentState !== 1) {
+        return res
+          .status(400)
+          .json({ error: 'Invalid or inactive subscription' });
       }
 
-      logger.debug('Determined account level:', { productId, accountLevel });
+      const accountLevel = productId.includes('pro') ? 'pro' : 'basic';
 
-      // Update using purchaseToken instead of orderId
-      db.run(
-        `UPDATE users SET googlePlaySubscriptionId = ? WHERE id = ?`,
-        [purchaseToken, userId],
-        (err) => {
-          if (err) {
-            logger.error('Error updating user account level in database:', {
-              error: err,
-              userId,
-              purchaseToken: purchaseToken.substring(0, 10) + '...',
-            });
-            return res.status(500).json({ error: 'Internal server error' });
-          }
+      // Update subscription status
+      await updateSubscriptionStatus(purchaseToken, userId, accountLevel);
 
-          logger.info('Successfully processed Google Play purchase:', {
-            userId,
-            accountLevel,
-            subscriptionId: purchaseToken.substring(0, 10) + '...',
-          });
-
-          res.json({
-            message: 'Purchase verified and processed successfully',
-            accountLevel: accountLevel,
-          });
-        }
-      );
+      res.json({
+        message: 'Purchase verified and processed successfully',
+        accountLevel,
+        expiryTimeMillis: response.data.expiryTimeMillis,
+      });
     } catch (error) {
       logger.error('Error processing Google Play purchase:', {
         error: {
@@ -184,74 +199,39 @@ router.post('/pubsub', async (req, res) => {
     const { subscriptionId, purchaseToken, notificationType } =
       message.subscriptionNotification;
 
-    // Log the contents of subscriptionId, purchaseToken, and notificationType
-    logger.info('Subscription Notification Details:', {
-      subscriptionId,
-      purchaseToken,
-      notificationType,
-    });
+    // Find the user associated with this purchase token
+    db.get(
+      `SELECT id, accountLevel FROM users WHERE googlePlaySubscriptionId = ?`,
+      [purchaseToken],
+      async (err, user) => {
+        if (err || !user) {
+          logger.warn('Received notification for unknown subscription:', {
+            purchaseToken,
+            subscriptionId,
+          });
+          return res.status(200).end();
+        }
 
-    // Handle different notification types
-    switch (notificationType) {
-      case 1: // SUBSCRIPTION_CANCELED
-      case 3: // SUBSCRIPTION_EXPIRED
-        // Update to use purchaseToken instead of subscriptionId
-        db.run(
-          `UPDATE users SET accountLevel = 'basic' WHERE googlePlaySubscriptionId = ?`,
-          [purchaseToken],
-          (err) => {
-            if (err) {
-              logger.error('Error updating user account level to basic:', err);
-            } else {
-              logger.info(
-                `User with purchase token ${purchaseToken} downgraded to basic`
-              );
-            }
-          }
-        );
-        break;
-      case 2: // SUBSCRIPTION_RENEWED
-      case 4: // SUBSCRIPTION_RESTARTED
-        // Update to use purchaseToken
-        db.run(
-          `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
-          [purchaseToken],
-          (err) => {
-            if (err) {
-              logger.error('Error updating user account level to pro:', err);
-            } else {
-              logger.info(
-                `User with purchase token ${purchaseToken} upgraded to pro (subscription renewed)`
-              );
-            }
-          }
-        );
-        break;
-      case 'SUBSCRIPTION_RECOVERED':
-      case 'SUBSCRIPTION_RENEWED':
-      case 'SUBSCRIPTION_PURCHASED':
-        // Update subscription status to active and set accountLevel to 'pro'
-        db.run(
-          `UPDATE users SET accountLevel = 'pro' WHERE googlePlaySubscriptionId = ?`,
-          [purchaseToken],
-          (err) => {
-            if (err) {
-              logger.error('Error updating user account level to pro:', err);
-            } else {
-              logger.info(
-                `User with purchase token ${purchaseToken} upgraded to pro`
-              );
-            }
-          }
-        );
-        break;
-      default:
-        logger.warn('Unhandled notification type:', { notificationType });
-    }
+        let newAccountLevel;
+        switch (notificationType) {
+          case 1: // SUBSCRIPTION_CANCELED
+          case 3: // SUBSCRIPTION_EXPIRED
+          case 13: // SUBSCRIPTION_ON_HOLD
+            newAccountLevel = 'basic';
+            break;
+          case 2: // SUBSCRIPTION_RENEWED
+          case 4: // SUBSCRIPTION_RESTARTED
+            newAccountLevel = 'pro';
+            break;
+          default:
+            logger.warn('Unhandled notification type:', { notificationType });
+            return res.status(200).end();
+        }
 
-    res
-      .status(200)
-      .json({ message: 'Webhook received and processed successfully' });
+        await updateSubscriptionStatus(purchaseToken, user.id, newAccountLevel);
+        res.status(200).json({ message: 'Webhook processed successfully' });
+      }
+    );
   } catch (error) {
     logger.error('Error processing Pub/Sub message:', error);
     return res.status(200).json({ error: 'Error processing message' });

@@ -41,7 +41,7 @@ router.get('/settings', authenticateToken, (req, res) => {
         appDailyNotificationTime: row.appDailyNotificationTime || '20:00',
       };
 
-      logger.info(`User settings fetched for user: ${userId}`);
+      logger.trace(`User settings fetched for user: ${userId}`);
       res.json(userSettings);
     }
   );

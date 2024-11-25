@@ -79,6 +79,9 @@ router.post(
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.warn('Validation errors in verify-purchase:', {
+        errors: errors.array(),
+      });
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -86,6 +89,14 @@ router.post(
       const userId = req.user.id;
       const productId = req.body.productId;
       const purchaseToken = req.body.purchaseToken;
+      const packageName = req.body.packageName;
+
+      logger.info('Starting Google Play purchase verification:', {
+        userId,
+        productId,
+        packageName,
+        purchaseToken: purchaseToken.substring(0, 10) + '...', // Log partial token for security
+      });
 
       let accountLevel = 'basic';
       if (productId === 'com.gencorp.moodful_app.pro.monthly') {
@@ -94,19 +105,28 @@ router.post(
         accountLevel = 'enterprise';
       }
 
+      logger.debug('Determined account level:', { productId, accountLevel });
+
       // Update using purchaseToken instead of orderId
       db.run(
         `UPDATE users SET googlePlaySubscriptionId = ? WHERE id = ?`,
         [purchaseToken, userId],
         (err) => {
           if (err) {
-            logger.error('Error updating user account level:', err);
+            logger.error('Error updating user account level in database:', {
+              error: err,
+              userId,
+              purchaseToken: purchaseToken.substring(0, 10) + '...',
+            });
             return res.status(500).json({ error: 'Internal server error' });
           }
 
-          logger.info(
-            `User ${userId} upgraded to ${accountLevel} via Google Play with subscription ID ${purchaseToken}`
-          );
+          logger.info('Successfully processed Google Play purchase:', {
+            userId,
+            accountLevel,
+            subscriptionId: purchaseToken.substring(0, 10) + '...',
+          });
+
           res.json({
             message: 'Purchase verified and processed successfully',
             accountLevel: accountLevel,
@@ -114,7 +134,14 @@ router.post(
         }
       );
     } catch (error) {
-      logger.error('Error processing purchase:', error);
+      logger.error('Error processing Google Play purchase:', {
+        error: {
+          message: error.message,
+          stack: error.stack,
+        },
+        userId: req.user.id,
+        productId: req.body.productId,
+      });
       res.status(500).json({ error: 'Error processing purchase' });
     }
   }
@@ -183,6 +210,7 @@ router.post('/pubsub', async (req, res) => {
           }
         );
         break;
+      case 2: // SUBSCRIPTION_RENEWED
       case 4: // SUBSCRIPTION_RESTARTED
         // Update to use purchaseToken
         db.run(
@@ -193,7 +221,7 @@ router.post('/pubsub', async (req, res) => {
               logger.error('Error updating user account level to pro:', err);
             } else {
               logger.info(
-                `User with purchase token ${purchaseToken} upgraded to pro (subscription restarted)`
+                `User with purchase token ${purchaseToken} upgraded to pro (subscription renewed)`
               );
             }
           }

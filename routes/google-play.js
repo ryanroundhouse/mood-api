@@ -120,52 +120,6 @@ const updateSubscriptionStatus = async (
   });
 };
 
-// Add this helper function near the top
-const testPermissions = async (authClient) => {
-  const testCases = [
-    {
-      name: 'Basic app info',
-      test: () =>
-        androidpublisher.apps.get({
-          auth: authClient,
-          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-        }),
-    },
-    {
-      name: 'Subscription products',
-      test: () =>
-        androidpublisher.monetization.subscriptions.list({
-          auth: authClient,
-          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-        }),
-    },
-    {
-      name: 'Purchase validation',
-      test: () =>
-        androidpublisher.purchases.products.get({
-          auth: authClient,
-          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
-          productId: 'test',
-          token: 'test',
-        }),
-    },
-  ];
-
-  const results = {};
-  for (const testCase of testCases) {
-    try {
-      await testCase.test();
-      results[testCase.name] = 'Success';
-    } catch (error) {
-      results[testCase.name] = {
-        error: error.message,
-        details: error.response?.data,
-      };
-    }
-  }
-  return results;
-};
-
 // Endpoint to verify and process a new purchase
 router.post(
   '/verify-purchase',
@@ -192,11 +146,6 @@ router.post(
       const packageName = req.body.packageName;
 
       const authClient = await debugAuth(playAuth, 'Play');
-
-      // Test permissions before making the actual request
-      logger.info('Testing Google Play permissions...');
-      const permissionTests = await testPermissions(authClient);
-      logger.info('Permission test results:', permissionTests);
 
       // Log detailed request information
       logger.info('Attempting subscription verification with:', {

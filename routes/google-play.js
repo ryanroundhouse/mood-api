@@ -255,13 +255,22 @@ router.post('/pubsub', async (req, res) => {
           case 1: // SUBSCRIPTION_CANCELED
           case 3: // SUBSCRIPTION_EXPIRED
           case 13: // SUBSCRIPTION_ON_HOLD
+          case 12: // SUBSCRIPTION_PAUSED
+          case 10: // SUBSCRIPTION_REVOKED
+          case 11: // SUBSCRIPTION_EXPIRED_FROM_BILLING_RETRY
             newAccountLevel = 'basic';
             break;
           case 2: // SUBSCRIPTION_RENEWED
           case 4: // SUBSCRIPTION_RESTARTED
+          case 7: // SUBSCRIPTION_PURCHASED
+          case 9: // SUBSCRIPTION_DEFERRED
+          case 8: // SUBSCRIPTION_PRICE_CHANGE_CONFIRMED
             newAccountLevel = 'pro';
             break;
           default:
+            logger.info('Unhandled subscription notification type:', {
+              notificationType,
+            });
             return res.status(200).end();
         }
 

@@ -164,14 +164,8 @@ router.post(
 
 // Endpoint to handle subscription status updates from Google Play
 router.post('/pubsub', async (req, res) => {
-  logger.info('Incoming Pub/Sub request', {
-    headers: req.headers,
-    body: JSON.stringify(req.body),
-  });
-
   try {
     if (!req.body || !req.body.message) {
-      logger.error('Missing message in request body:', req.body);
       return res.status(200).json({ error: 'Invalid message format' });
     }
 
@@ -179,7 +173,6 @@ router.post('/pubsub', async (req, res) => {
     try {
       messageData = Buffer.from(req.body.message.data, 'base64').toString();
     } catch (decodeError) {
-      logger.error('Failed to decode base64 message:', decodeError);
       return res.status(200).json({ error: 'Invalid message encoding' });
     }
 
@@ -187,12 +180,10 @@ router.post('/pubsub', async (req, res) => {
     try {
       message = JSON.parse(messageData);
     } catch (parseError) {
-      logger.error('Failed to parse JSON:', parseError);
       return res.status(200).json({ error: 'Invalid JSON format' });
     }
 
     if (!message || !message.subscriptionNotification) {
-      logger.error('Invalid notification format:', message);
       return res.status(200).json({ error: 'Invalid notification format' });
     }
 
@@ -205,10 +196,6 @@ router.post('/pubsub', async (req, res) => {
       [purchaseToken],
       async (err, user) => {
         if (err || !user) {
-          logger.warn('Received notification for unknown subscription:', {
-            purchaseToken,
-            subscriptionId,
-          });
           return res.status(200).end();
         }
 
@@ -224,7 +211,6 @@ router.post('/pubsub', async (req, res) => {
             newAccountLevel = 'pro';
             break;
           default:
-            logger.warn('Unhandled notification type:', { notificationType });
             return res.status(200).end();
         }
 
@@ -233,7 +219,6 @@ router.post('/pubsub', async (req, res) => {
       }
     );
   } catch (error) {
-    logger.error('Error processing Pub/Sub message:', error);
     return res.status(200).json({ error: 'Error processing message' });
   }
 });

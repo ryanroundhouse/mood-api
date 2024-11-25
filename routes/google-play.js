@@ -120,6 +120,52 @@ const updateSubscriptionStatus = async (
   });
 };
 
+// Add this helper function near the top
+const testPermissions = async (authClient) => {
+  const testCases = [
+    {
+      name: 'Basic app info',
+      test: () =>
+        androidpublisher.apps.get({
+          auth: authClient,
+          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+        }),
+    },
+    {
+      name: 'Subscription products',
+      test: () =>
+        androidpublisher.monetization.subscriptions.list({
+          auth: authClient,
+          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+        }),
+    },
+    {
+      name: 'Purchase validation',
+      test: () =>
+        androidpublisher.purchases.products.get({
+          auth: authClient,
+          packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+          productId: 'test',
+          token: 'test',
+        }),
+    },
+  ];
+
+  const results = {};
+  for (const testCase of testCases) {
+    try {
+      await testCase.test();
+      results[testCase.name] = 'Success';
+    } catch (error) {
+      results[testCase.name] = {
+        error: error.message,
+        details: error.response?.data,
+      };
+    }
+  }
+  return results;
+};
+
 // Endpoint to verify and process a new purchase
 router.post(
   '/verify-purchase',
@@ -145,32 +191,65 @@ router.post(
       const purchaseToken = req.body.purchaseToken;
       const packageName = req.body.packageName;
 
-      // First verify the purchase with Google Play
       const authClient = await debugAuth(playAuth, 'Play');
-      const response = await androidpublisher.purchases.subscriptions.get({
-        auth: authClient,
-        packageName: packageName,
-        subscriptionId: productId,
-        token: purchaseToken,
+
+      // Test permissions before making the actual request
+      logger.info('Testing Google Play permissions...');
+      const permissionTests = await testPermissions(authClient);
+      logger.info('Permission test results:', permissionTests);
+
+      // Log detailed request information
+      logger.info('Attempting subscription verification with:', {
+        packageName,
+        productId,
+        tokenLength: purchaseToken?.length,
+        authScopes: authClient.scopes,
+        serviceAccountEmail: authClient.email,
       });
 
-      // Check if subscription is active
-      if (response.data.paymentState !== 1) {
-        return res
-          .status(400)
-          .json({ error: 'Invalid or inactive subscription' });
+      try {
+        const response = await androidpublisher.purchases.subscriptions.get({
+          auth: authClient,
+          packageName: packageName,
+          subscriptionId: productId,
+          token: purchaseToken,
+        });
+
+        // Check if subscription is active
+        if (response.data.paymentState !== 1) {
+          return res
+            .status(400)
+            .json({ error: 'Invalid or inactive subscription' });
+        }
+
+        const accountLevel = productId.includes('pro') ? 'pro' : 'basic';
+
+        // Update subscription status
+        await updateSubscriptionStatus(purchaseToken, userId, accountLevel);
+
+        res.json({
+          message: 'Purchase verified and processed successfully',
+          accountLevel,
+          expiryTimeMillis: response.data.expiryTimeMillis,
+        });
+      } catch (error) {
+        logger.error('Detailed Google Play API error:', {
+          error: {
+            message: error.message,
+            code: error.code,
+            status: error.status,
+            details: error.response?.data,
+            scopes: authClient.scopes,
+            serviceAccount: authClient.email,
+          },
+          request: {
+            packageName,
+            productId,
+            hasToken: !!purchaseToken,
+          },
+        });
+        throw error;
       }
-
-      const accountLevel = productId.includes('pro') ? 'pro' : 'basic';
-
-      // Update subscription status
-      await updateSubscriptionStatus(purchaseToken, userId, accountLevel);
-
-      res.json({
-        message: 'Purchase verified and processed successfully',
-        accountLevel,
-        expiryTimeMillis: response.data.expiryTimeMillis,
-      });
     } catch (error) {
       logger.error('Error processing Google Play purchase:', {
         error: {

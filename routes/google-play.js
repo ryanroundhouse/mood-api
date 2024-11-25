@@ -13,6 +13,29 @@ const playAuth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/androidpublisher'],
 });
 
+// Add this check to verify service account setup
+const verifyServiceAccount = async () => {
+  try {
+    const client = await playAuth.getClient();
+    if (!client.key) {
+      throw new Error('Service account key not found');
+    }
+    logger.info('Google Play service account authenticated successfully');
+    return client;
+  } catch (error) {
+    logger.error('Google Play service account authentication failed:', {
+      error: error.message,
+      keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
+    });
+    throw error;
+  }
+};
+
+// Call this when your server starts
+verifyServiceAccount().catch((error) => {
+  logger.error('Failed to initialize Google Play service account:', error);
+});
+
 // Configure Pub/Sub client
 const pubsubAuth = new google.auth.GoogleAuth({
   keyFile: process.env.GOOGLE_PUBSUB_KEY_FILE,

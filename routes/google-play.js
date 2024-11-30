@@ -120,6 +120,19 @@ const updateSubscriptionStatus = async (
   });
 };
 
+// Add this helper function to determine subscription type
+const getSubscriptionDetails = (productId, purchaseData) => {
+  const isPromo = purchaseData.promotionType !== undefined;
+  const baseProductId = productId.replace('-7dayfree-199', ''); // Strip promo suffix
+  const accountLevel = baseProductId.includes('pro') ? 'pro' : 'basic';
+  
+  return {
+    isPromo,
+    accountLevel,
+    originalProductId: baseProductId
+  };
+};
+
 // Endpoint to verify and process a new purchase
 router.post(
   '/verify-purchase',
@@ -171,7 +184,17 @@ router.post(
             .json({ error: 'Invalid or inactive subscription' });
         }
 
-        const accountLevel = productId.includes('pro') ? 'pro' : 'basic';
+        // Get subscription details including promo information
+        const { isPromo, accountLevel } = getSubscriptionDetails(productId, response.data);
+
+        // Log promotional purchase if applicable
+        if (isPromo) {
+          logger.info('Processing promotional subscription:', {
+            userId: req.user.id,
+            productId,
+            promotionType: response.data.promotionType,
+          });
+        }
 
         // Update subscription status
         await updateSubscriptionStatus(purchaseToken, userId, accountLevel);
@@ -180,6 +203,7 @@ router.post(
           message: 'Purchase verified and processed successfully',
           accountLevel,
           expiryTimeMillis: response.data.expiryTimeMillis,
+          isPromo,
         });
       } catch (error) {
         logger.error('Detailed Google Play API error:', {

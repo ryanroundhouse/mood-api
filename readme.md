@@ -305,7 +305,8 @@ Response:
   "emailWeeklySummary": true,
   "appDailyNotifications": true,
   "appWeeklySummary": true,
-  "appDailyNotificationTime": "20:00"
+  "appDailyNotificationTime": "20:00",
+  "moodEmojis": ["😊", "😕", "😐", "🙂", "😄"]
 }
 ```
 
@@ -327,7 +328,8 @@ Request body:
   "emailWeeklySummary": true, // Optional
   "appDailyNotifications": false, // Optional
   "appWeeklySummary": true, // Optional
-  "appDailyNotificationTime": "20:00" // Optional, 24-hour format (HH:mm)
+  "appDailyNotificationTime": "20:00", // Optional, 24-hour format (HH:mm)
+  "moodEmojis": ["😊", "😐", "😐", "🙂", "😄"] // Optional, must contain exactly 5 emojis if provided
 }
 ```
 
@@ -337,6 +339,7 @@ Notes:
 - `name` must be a non-empty string if provided.
 - All notification settings (`emailDailyNotifications`, `emailWeeklySummary`, `appDailyNotifications`, `appWeeklySummary`) must be boolean values if provided.
 - `appDailyNotificationTime` must be in 24-hour format (HH:mm) if provided. Defaults to "20:00" if not set.
+- `moodEmojis` must contain exactly 5 emoji characters if provided. Can be used to customize mood rating display.
 
 Response:
 

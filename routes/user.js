@@ -15,7 +15,7 @@ router.get('/settings', authenticateToken, (req, res) => {
     `SELECT users.name, users.email, users.accountLevel, 
      user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
      user_settings.appDailyNotifications, user_settings.appWeeklySummary,
-     user_settings.appDailyNotificationTime
+     user_settings.appDailyNotificationTime, user_settings.moodEmojis
      FROM users 
      LEFT JOIN user_settings ON users.id = user_settings.userId 
      WHERE users.id = ?`,
@@ -39,6 +39,7 @@ router.get('/settings', authenticateToken, (req, res) => {
         appDailyNotifications: row.appDailyNotifications === 1,
         appWeeklySummary: row.appWeeklySummary === 1,
         appDailyNotificationTime: row.appDailyNotificationTime || '20:00',
+        moodEmojis: row.moodEmojis ? JSON.parse(row.moodEmojis) : null,
       };
 
       res.json(userSettings);
@@ -59,6 +60,7 @@ router.put(
     body('appDailyNotificationTime')
       .optional()
       .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/), // HH:mm format
+    body('moodEmojis').optional().isArray(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -74,6 +76,7 @@ router.put(
       appDailyNotifications,
       appWeeklySummary,
       appDailyNotificationTime,
+      moodEmojis,
     } = req.body;
 
     db.serialize(() => {
@@ -116,6 +119,21 @@ router.put(
       if (appDailyNotificationTime !== undefined) {
         updates.push('appDailyNotificationTime = ?');
         values.push(appDailyNotificationTime);
+      }
+
+      if (moodEmojis !== undefined) {
+        // Check if the moodEmojis array matches the default set
+        const isDefaultEmojis = JSON.stringify(moodEmojis) === JSON.stringify(["😢","😕","😐","🙂","😄"]);
+        
+        if (isDefaultEmojis) {
+          // If it's the default set, set the database value to null
+          updates.push('moodEmojis = ?');
+          values.push(null);
+        } else {
+          // If it's a custom set, store it as JSON
+          updates.push('moodEmojis = ?');
+          values.push(JSON.stringify(moodEmojis));
+        }
       }
 
       if (updates.length > 0) {
@@ -300,7 +318,13 @@ router.get('/summaries', authenticateToken, generalLimiter, (req, res) => {
         return res.status(404).json({ error: 'No summaries found' });
       }
 
-      const summaries = rows.map((row) => {
+      logger.debug('Raw database rows:', rows);
+      const summaries = rows.map(row => {
+        logger.debug('Processing row:', { 
+          rowId: row.id,
+          hasEncryptedField: Boolean(row.yourEncryptedField),
+          rowData: row 
+        });
         let basicInsights, aiInsights;
 
         try {

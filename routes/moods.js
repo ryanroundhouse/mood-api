@@ -248,8 +248,16 @@ router.get('/', authenticateToken, (req, res) => {
       // Decrypt comments for each mood but leave activities as a string
       const decryptedMoods = moods.map((mood) => ({
         ...mood,
-        comment: mood.comment ? decrypt(mood.comment) : null,
-        // Don't parse the activities JSON string
+        comment: mood.comment ? 
+          (() => {
+            try {
+              return decrypt(mood.comment);
+            } catch (error) {
+              logger.warn(`Failed to decrypt comment for mood ${mood.id}: ${error.message}`);
+              return mood.comment; // Return the original comment if decryption fails
+            }
+          })() 
+          : null
       }));
 
       logger.info(

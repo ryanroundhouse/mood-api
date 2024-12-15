@@ -42,6 +42,7 @@ function initializeDatabase() {
         emailWeeklySummary INTEGER DEFAULT 1,
         appDailyNotifications INTEGER DEFAULT 1,
         appWeeklySummary INTEGER DEFAULT 1,
+        moodEmojis TEXT,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);

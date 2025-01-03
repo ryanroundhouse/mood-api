@@ -90,6 +90,83 @@
           background-color: #e8e8e8;
         }
       }
+
+      /* Mobile App Section Styles */
+      .mobile-app {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        color: #1a1a1a;
+        padding: 4rem 2rem;
+      }
+
+      .app-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 4rem;
+      }
+
+      .app-text {
+        flex: 1;
+      }
+
+      .app-text h2 {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .app-tagline {
+        font-size: 1.25rem;
+        margin-bottom: 2rem;
+      }
+
+      .app-features {
+        list-style: none;
+        padding: 0;
+        margin-bottom: 2rem;
+      }
+
+      .app-features li {
+        margin: 1rem 0;
+        font-size: 1.1rem;
+      }
+
+      .app-image {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+      }
+
+      .phone-mockup {
+        max-width: 300px;
+        height: auto;
+        filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.2));
+      }
+
+      .play-store-badge {
+        height: 60px;
+        width: auto;
+        transition: transform 0.2s ease;
+      }
+
+      .play-store-badge:hover {
+        transform: scale(1.05);
+      }
+
+      @media (max-width: 768px) {
+        .app-content {
+          flex-direction: column-reverse;
+          gap: 2rem;
+        }
+
+        .app-text h2 {
+          font-size: 2rem;
+        }
+
+        .phone-mockup {
+          max-width: 250px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -120,6 +197,33 @@
         ><button class="cta">Get Started</button></a
       >
     </section>
+
+    <!-- New Mobile App Section -->
+    <section class="mobile-app">
+      <div class="app-content">
+        <div class="app-text">
+          <h2>Take Moodful Everywhere!</h2>
+          <p class="app-tagline">Track your moods on the go with our new Android app</p>
+          <ul class="app-features">
+            <li>✨ Daily mood tracking with customizable tags</li>
+            <li>🎯 Advanced AI-powered weekly insights</li>
+            <li>📊 Beautiful mood visualization</li>
+            <li>🎨 Multiple emoji sets to choose from</li>
+          </ul>
+          <a href="https://play.google.com/store/apps/details?id=com.gencorp.moodful_app" 
+             class="download-button" 
+             target="_blank"
+             rel="noopener noreferrer">
+            <img src="img/google-play-badge.png" alt="Get it on Google Play" class="play-store-badge">
+          </a>
+        </div>
+        <div class="app-image">
+          <img src="img/app-preview.png" alt="Moodful Android App Preview" class="phone-mockup">
+        </div>
+      </div>
+    </section>
+
+
 
     <section class="features">
       <div class="feature-card">

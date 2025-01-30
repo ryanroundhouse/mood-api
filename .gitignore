@@ -91,6 +91,7 @@ ehthumbs.db
 Thumbs.db
 
 # other stuff
+ecosystem.config.js
 database.sqlite
 scripts/my_env
 .venv

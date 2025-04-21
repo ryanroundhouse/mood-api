@@ -174,8 +174,8 @@ def send_goodbye_email(to_email, user_id):
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Checking In - Moodful</title>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-            h1 { color: #6a89cc; }
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
+            h1 {{ color: #6a89cc; }}
         </style>
     </head>
     <body>

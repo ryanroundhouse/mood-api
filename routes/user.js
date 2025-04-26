@@ -358,4 +358,46 @@ router.get('/summaries', authenticateToken, generalLimiter, (req, res) => {
   );
 });
 
+// Unsubscribe from email notifications (no login required)
+router.get('/unsubscribe', (req, res) => {
+  const { token, type = 'daily' } = req.query;
+  if (!token) return res.status(400).send('Invalid unsubscribe link.');
+
+  db.get('SELECT userId FROM user_settings WHERE unsubscribeToken = ?', [token], (err, row) => {
+    if (err || !row) return res.status(400).send('Invalid or expired unsubscribe link.');
+
+    let updateSql;
+    let responseMessage;
+
+    // Determine which settings to update based on the type parameter
+    switch (type) {
+      case 'daily':
+        updateSql = 'UPDATE user_settings SET emailDailyNotifications = 0 WHERE userId = ?';
+        responseMessage = 'You have been unsubscribed from daily mood emails.';
+        break;
+      case 'weekly':
+        updateSql = 'UPDATE user_settings SET emailWeeklySummary = 0 WHERE userId = ?';
+        responseMessage = 'You have been unsubscribed from weekly mood summary emails.';
+        break;
+      case 'all':
+        updateSql = 'UPDATE user_settings SET emailDailyNotifications = 0, emailWeeklySummary = 0 WHERE userId = ?';
+        responseMessage = 'You have been unsubscribed from all mood emails.';
+        break;
+      default:
+        updateSql = 'UPDATE user_settings SET emailDailyNotifications = 0 WHERE userId = ?';
+        responseMessage = 'You have been unsubscribed from daily mood emails.';
+    }
+
+    db.run(updateSql, [row.userId], (err) => {
+      if (err) {
+        logger.error('Error unsubscribing user:', err);
+        return res.status(500).send('Could not unsubscribe.');
+      }
+      
+      logger.info(`User ${row.userId} unsubscribed from ${type} emails`);
+      res.send(responseMessage);
+    });
+  });
+});
+
 module.exports = router;

@@ -11,6 +11,8 @@ from collections import defaultdict, Counter
 import re
 import random
 import nltk
+import pathlib
+import logging
 nltk.download('opinion_lexicon')
 nltk.download('wordnet')
 from nltk.corpus import opinion_lexicon
@@ -18,20 +20,39 @@ from nltk.corpus import wordnet
 from openai import OpenAI
 from Crypto.Cipher import AES
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root .env file
+script_dir = pathlib.Path(__file__).parent.absolute()
+project_root = script_dir.parent
+dotenv_path = project_root / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
 # Email configuration
 MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
 MAILGUN_DOMAIN = os.getenv("EMAIL_DOMAIN")
 SENDER_EMAIL = os.getenv("NOREPLY_EMAIL")
+BASE_URL = os.getenv("MOOD_SITE_URL", "http://localhost:3000")
 
 # Database configuration
-DB_PATH = "../database.sqlite"
+DB_PATH = os.path.join(project_root, "database.sqlite")
 
 # OpenAI configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+def get_or_create_unsubscribe_token(user_id):
+    """Gets or creates an unsubscribe token for the user."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT unsubscribeToken FROM user_settings WHERE userId = ?", (user_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        token = row[0]
+    else:
+        token = os.urandom(16).hex()
+        cursor.execute("UPDATE user_settings SET unsubscribeToken = ? WHERE userId = ?", (token, user_id))
+        conn.commit()
+    conn.close()
+    return token
 
 def get_users():
     conn = sqlite3.connect(DB_PATH)
@@ -162,8 +183,13 @@ def generate_calendar_html(year, month, moods):
     
     return html
 
-def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date, end_date):
+def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date, end_date, user_id):
     subject = "Moodful - Your Weekly Mood Summary"
+    
+    # Get or create unsubscribe token for this user
+    unsubscribe_token = get_or_create_unsubscribe_token(user_id)
+    unsubscribe_link = f"{BASE_URL}/api/user/unsubscribe?token={unsubscribe_token}&type=weekly"
+    unsubscribe_all_link = f"{BASE_URL}/api/user/unsubscribe?token={unsubscribe_token}&type=all"
     
     # Generate the email body
     email_body = f"""
@@ -198,10 +224,14 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date
             <p>{insight['description']}</p>
             """
 
-    html_content += """
+    html_content += f"""
         <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work and have a wonderful week ahead!</p>
         <p>Best regards,
         <br/>Your Moodful</p>
+        <div style="margin-top: 30px; font-size: 0.9em; color: #888; border-top: 1px solid #ddd; padding-top: 15px;">
+            <p>If you no longer wish to receive weekly summary emails, you can <a href="{unsubscribe_link}">unsubscribe from weekly summaries</a>.</p>
+            <p>Or if you wish to unsubscribe from all emails, you can <a href="{unsubscribe_all_link}">unsubscribe from all Moodful emails</a>.</p>
+        </div>
     </body>
     </html>
     """
@@ -476,7 +506,7 @@ def get_openai_insights(moods):
 
     Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
 
-    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.
+    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.  IT MUST PROPOSE A WIN FROM THE PAST WEEK, NOT JUST ANYTIME.
 
     Answer4: What's a prediction for the upcoming week you would make for moods (positive prediction only - nothing negative please).
 
@@ -487,19 +517,29 @@ def get_openai_insights(moods):
     prompt = prompt.format(moods=json.dumps(moods, indent=2), current_date=current_date)
 
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that analyzes mood data."},
             {"role": "user", "content": prompt}
         ]
     )
 
-    content = json.loads(response.choices[0].message.content)
+    raw_content = getattr(response.choices[0].message, 'content', None)
+
+    # Remove code block markers if present
+    if raw_content:
+        raw_content = re.sub(r'^```json\s*|^```\s*|```$', '', raw_content.strip(), flags=re.MULTILINE).strip()
+
+    try:
+        content = json.loads(raw_content)
+    except Exception:
+        return [{"name": "AI Insights Error", "description": "Could not parse OpenAI response."}]
+
     return [
-        {"name": "Mood Insights", "description": content["Answer1"]},
-        {"name": "Trends and Correlations", "description": content["Answer2"]},
-        {"name": "Small Win of the Week", "description": content["Answer3"]},
-        {"name": "Mood Prediction", "description": content["Answer4"]}
+        {"name": "Mood Insights", "description": content.get("Answer1", "No answer.")},
+        {"name": "Trends and Correlations", "description": content.get("Answer2", "No answer.")},
+        {"name": "Small Win of the Week", "description": content.get("Answer3", "No answer.")},
+        {"name": "Mood Prediction", "description": content.get("Answer4", "No answer.")}
     ]
 
 def encrypt(text):
@@ -581,7 +621,7 @@ def main():
         
         # Only send email if emailWeeklySummary is enabled
         if email_weekly_summary:
-            send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date)
+            send_email(email, calendar_html, basic_stats, openai_insights, start_date, end_date, user_id)
         else:
             print(f"Email not sent for user {user_id} as emailWeeklySummary is disabled")
 

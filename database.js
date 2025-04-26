@@ -43,9 +43,40 @@ function initializeDatabase() {
         appDailyNotifications INTEGER DEFAULT 1,
         appWeeklySummary INTEGER DEFAULT 1,
         moodEmojis TEXT,
+        unsubscribeToken TEXT,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);
+
+    // Migration: add unsubscribeToken column if it doesn't exist
+    db.all("PRAGMA table_info(user_settings)", (err, columns) => {
+      if (err) {
+        logger.error('Error checking user_settings columns:', err);
+        return;
+      }
+      
+      // Check if the column exists in the returned array
+      let hasUnsubscribeToken = false;
+      if (Array.isArray(columns)) {
+        for (const col of columns) {
+          if (col.name === 'unsubscribeToken') {
+            hasUnsubscribeToken = true;
+            break;
+          }
+        }
+      }
+      
+      // If the column doesn't exist, add it
+      if (!hasUnsubscribeToken) {
+        db.run("ALTER TABLE user_settings ADD COLUMN unsubscribeToken TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add unsubscribeToken column:', alterErr);
+          } else {
+            logger.info('unsubscribeToken column added to user_settings table');
+          }
+        });
+      }
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS mood_auth_codes (

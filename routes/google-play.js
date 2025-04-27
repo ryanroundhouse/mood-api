@@ -2,30 +2,91 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
 const logger = require('../utils/logger');
 const { strictLimiter } = require('../middleware/rateLimiter');
 const { db } = require('../database');
 const { authenticateToken } = require('../middleware/auth');
 
+// Load Google Play configuration from .env file
+const GOOGLE_PLAY_KEY_FILE = process.env.GOOGLE_PLAY_KEY_FILE;
+const GOOGLE_PLAY_PACKAGE_NAME = process.env.GOOGLE_PLAY_PACKAGE_NAME;
+const GOOGLE_PUBSUB_KEY_FILE = process.env.GOOGLE_PUBSUB_KEY_FILE;
+
+// Validate required environment variables
+if (!GOOGLE_PLAY_KEY_FILE) {
+  logger.error('Missing required environment variable: GOOGLE_PLAY_KEY_FILE');
+}
+if (!GOOGLE_PLAY_PACKAGE_NAME) {
+  logger.error('Missing required environment variable: GOOGLE_PLAY_PACKAGE_NAME');
+}
+if (!GOOGLE_PUBSUB_KEY_FILE) {
+  logger.error('Missing required environment variable: GOOGLE_PUBSUB_KEY_FILE');
+}
+
+// Helper function to check if a file exists and is accessible
+const verifyKeyFileAccessible = (filePath) => {
+  if (!filePath) return false;
+  
+  try {
+    // Convert relative paths to absolute if needed
+    const resolvedPath = path.isAbsolute(filePath) 
+      ? filePath 
+      : path.resolve(process.cwd(), filePath);
+    
+    // Check if file exists and is accessible
+    fs.accessSync(resolvedPath, fs.constants.R_OK);
+    logger.info(`Key file verified at: ${resolvedPath}`);
+    return resolvedPath;
+  } catch (error) {
+    logger.error(`Key file inaccessible: ${filePath}`, {
+      error: error.message,
+      cwd: process.cwd(),
+      resolvedPath: path.isAbsolute(filePath) 
+        ? filePath 
+        : path.resolve(process.cwd(), filePath)
+    });
+    return false;
+  }
+};
+
+// Verify key files before initializing auth
+const resolvedPlayKeyFile = verifyKeyFileAccessible(GOOGLE_PLAY_KEY_FILE);
+const resolvedPubSubKeyFile = verifyKeyFileAccessible(GOOGLE_PUBSUB_KEY_FILE);
+
 // Configure Google Play API client
 const playAuth = new google.auth.GoogleAuth({
-  keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
+  keyFile: resolvedPlayKeyFile || GOOGLE_PLAY_KEY_FILE,
   scopes: ['https://www.googleapis.com/auth/androidpublisher'],
 });
 
 // Add this check to verify service account setup
 const verifyServiceAccount = async () => {
   try {
-    const client = await playAuth.getClient();
-    if (!client.key) {
-      throw new Error('Service account key not found');
+    if (!resolvedPlayKeyFile) {
+      throw new Error(`Service account key file not found or not accessible: ${GOOGLE_PLAY_KEY_FILE}`);
     }
-    logger.info('Google Play service account authenticated successfully');
+    
+    logger.info('Attempting to authenticate with Google Play service account...');
+    const client = await playAuth.getClient();
+    
+    if (!client.key) {
+      throw new Error('Service account key not found in client');
+    }
+    
+    logger.info('Google Play service account authenticated successfully', {
+      email: client.email || 'unknown'
+    });
+    
     return client;
   } catch (error) {
     logger.error('Google Play service account authentication failed:', {
       error: error.message,
-      keyFile: process.env.GOOGLE_PLAY_KEY_FILE,
+      stack: error.stack,
+      keyFile: GOOGLE_PLAY_KEY_FILE,
+      resolvedKeyFile: resolvedPlayKeyFile
     });
     throw error;
   }
@@ -38,7 +99,7 @@ verifyServiceAccount().catch((error) => {
 
 // Configure Pub/Sub client
 const pubsubAuth = new google.auth.GoogleAuth({
-  keyFile: process.env.GOOGLE_PUBSUB_KEY_FILE,
+  keyFile: resolvedPubSubKeyFile || GOOGLE_PUBSUB_KEY_FILE,
   scopes: ['https://www.googleapis.com/auth/pubsub'],
 });
 
@@ -47,16 +108,43 @@ const androidpublisher = google.androidpublisher('v3');
 // Debug function for auth issues
 const debugAuth = async (auth, type = 'unknown') => {
   try {
+    logger.info(`Attempting to get ${type} auth client...`);
+    
+    // Check which key file is being used
+    const keyFile = type === 'Play' 
+      ? resolvedPlayKeyFile || GOOGLE_PLAY_KEY_FILE
+      : resolvedPubSubKeyFile || GOOGLE_PUBSUB_KEY_FILE;
+    
+    if (!keyFile || (typeof keyFile === 'string' && !resolvedPlayKeyFile && type === 'Play')) {
+      throw new Error(`No valid key file available for ${type} auth`);
+    }
+    
     const authClient = await auth.getClient();
-
-    const token = await authClient.getAccessToken();
-    return authClient;
+    logger.info(`Successfully got ${type} auth client`);
+    
+    try {
+      const token = await authClient.getAccessToken();
+      logger.info(`Successfully got access token for ${type} auth`);
+      return authClient;
+    } catch (tokenError) {
+      logger.error(`Failed to get access token for ${type} auth:`, {
+        error: tokenError.message,
+        stack: tokenError.stack
+      });
+      throw tokenError;
+    }
   } catch (error) {
     logger.error(`${type} Auth Debug Error:`, {
       message: error.message,
       stack: error.stack,
       code: error.code,
       details: error.response?.data,
+      keyFile: type === 'Play' 
+        ? GOOGLE_PLAY_KEY_FILE 
+        : GOOGLE_PUBSUB_KEY_FILE,
+      resolvedKeyFile: type === 'Play' 
+        ? resolvedPlayKeyFile 
+        : resolvedPubSubKeyFile
     });
     throw error;
   }
@@ -336,7 +424,7 @@ router.get(
             const response = await androidpublisher.purchases.subscriptions.get(
               {
                 auth: authClient,
-                packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+                packageName: GOOGLE_PLAY_PACKAGE_NAME,
                 subscriptionId: user.googlePlaySubscriptionId,
                 token: user.googlePlaySubscriptionId,
               }

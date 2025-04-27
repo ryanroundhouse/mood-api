@@ -6,20 +6,29 @@ const { strictLimiter } = require('../middleware/rateLimiter');
 const { db } = require('../database');
 const logger = require('../utils/logger');
 
-// Stripe webhook endpoint
+// Stripe webhook endpoint - must be before any express.json() middleware
 router.post(
   '/webhook',
-  express.raw({ type: 'application/json' }),
   async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
 
     try {
+      // Make sure req.body is available as a Buffer
+      const payload = req.body;
+      
+      if (!Buffer.isBuffer(payload)) {
+        logger.error('Webhook payload is not a Buffer');
+        return res.status(400).send('Webhook Error: Payload must be provided as raw Buffer');
+      }
+      
       event = stripe.webhooks.constructEvent(
-        req.body,
+        payload,
         sig,
         process.env.STRIPE_WEBHOOK_SECRET
       );
+      
+      logger.info(`Webhook received: ${event.type}`);
     } catch (err) {
       logger.error('Webhook signature verification failed:', err);
       return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -31,14 +40,33 @@ router.post(
         case 'payment_intent.succeeded':
           const paymentIntent = event.data.object;
           logger.info(
-            `PaymentIntent for ${paymentIntent.amount} was successful!`
+            `PaymentIntent for ${paymentIntent.amount} was successful! ID: ${paymentIntent.id}, Customer: ${paymentIntent.customer || 'none'}`
           );
-          // Note: Individual payment success is handled through subscription events
+          
+          // If there's a customer ID, look up the user
+          if (paymentIntent.customer) {
+            db.get(
+              `SELECT id, email FROM users WHERE stripeCustomerId = ?`,
+              [paymentIntent.customer],
+              (err, user) => {
+                if (err) {
+                  logger.error('Error finding user for payment intent:', err);
+                } else if (user) {
+                  logger.info(`Payment is for user ${user.id} (${user.email})`);
+                } else {
+                  logger.warn(`No user found for Stripe customer: ${paymentIntent.customer}`);
+                }
+              }
+            );
+          }
           break;
           
         case 'invoice.payment_succeeded':
           const invoice = event.data.object;
           if (invoice.subscription) {
+            // Log detailed information
+            logger.info(`Invoice payment succeeded: ID=${invoice.id}, Customer=${invoice.customer}, Subscription=${invoice.subscription}`);
+            
             // Update subscription status in the database
             await handleSuccessfulPayment(invoice);
           }
@@ -47,6 +75,9 @@ router.post(
         case 'invoice.payment_failed':
           const failedInvoice = event.data.object;
           if (failedInvoice.subscription) {
+            // Log detailed information
+            logger.info(`Invoice payment failed: ID=${failedInvoice.id}, Customer=${failedInvoice.customer}, Subscription=${failedInvoice.subscription}`);
+            
             // Handle failed payment - possibly notify user
             await handleFailedPayment(failedInvoice);
           }
@@ -54,16 +85,33 @@ router.post(
           
         case 'customer.subscription.created':
           const newSubscription = event.data.object;
-          logger.info(`New subscription created: ${newSubscription.id}`);
+          logger.info(`New subscription created: ID=${newSubscription.id}, Customer=${newSubscription.customer}, Status=${newSubscription.status}`);
+          
+          // Log user information if we can find them
+          db.get(
+            `SELECT id, email FROM users WHERE stripeCustomerId = ?`,
+            [newSubscription.customer],
+            (err, user) => {
+              if (err) {
+                logger.error('Error finding user for new subscription:', err);
+              } else if (user) {
+                logger.info(`Subscription created for user ${user.id} (${user.email})`);
+              } else {
+                logger.warn(`No user found for Stripe customer: ${newSubscription.customer}`);
+              }
+            }
+          );
           break;
           
         case 'customer.subscription.updated':
           const updatedSubscription = event.data.object;
+          logger.info(`Subscription updated: ID=${updatedSubscription.id}, Customer=${updatedSubscription.customer}, Status=${updatedSubscription.status}`);
           await handleSubscriptionUpdate(updatedSubscription);
           break;
           
         case 'customer.subscription.deleted':
           const canceledSubscription = event.data.object;
+          logger.info(`Subscription canceled: ID=${canceledSubscription.id}, Customer=${canceledSubscription.customer}`);
           await handleSubscriptionCancellation(canceledSubscription);
           break;
           

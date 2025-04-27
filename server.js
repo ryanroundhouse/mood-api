@@ -113,7 +113,10 @@ try {
   // Trust proxy settings (add this before other middleware)
   app.set('trust proxy', 1);
 
-  // Middleware
+  // Special handling for Stripe webhooks - must use raw body parser
+  app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+  
+  // Standard middleware for all other routes
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 

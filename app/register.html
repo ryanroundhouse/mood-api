@@ -230,6 +230,47 @@
       .alert-banner.error {
         background-color: #f44336;
       }
+      
+      /* Add styles for loading indicators */
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s linear infinite;
+        transform-origin: center center;
+        vertical-align: middle;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .btn-loading {
+        position: relative;
+        pointer-events: none;
+        opacity: 0.8;
+      }
+      
+      .btn-loading .spinner {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        margin: 0;
+      }
+      
+      .btn-loading-text {
+        visibility: hidden;
+      }
+      
+      .form-disabled {
+        opacity: 0.7;
+        pointer-events: none;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -277,7 +318,7 @@
         </div>
         <div class="radio-group">
           <input type="radio" id="pro" name="accountType" value="pro" checked />
-          <label for="pro">Pro Account (<a href="pricing.html">$4.99 per month</a>)</label>
+          <label for="pro">Pro Account (<a href="pricing.html">$2.99 CAD per month</a>)</label>
         </div>
 
         <div id="payment-section" style="display: none;">
@@ -311,8 +352,14 @@
 
     <script type="module">
       import { unauthenticatedApiCall } from './api-script.js';
+      const config = {
+        stripePublishableKey:
+          window.location.hostname === 'localhost'
+            ? 'pk_test_51RIEV4QuF6M0Ys2e3m1ChI8XilMtPWDkrrghzrbcZ8COndn7xo6paW0BF9MBm5DslFPn1ZvllI5Ykh3GMu3sW6hV002l8kjvYT'
+            : 'pk_live_51Q4MRsJCefXRKysVAmn5vPrGKbkAei95VaU91eeuV7pKrRnRfLHWq8f9I60ore0hb4XsoHfRCn4PsHQxsGif5YgV00eCcSUIOt',
+      };
 
-      const stripe = Stripe('pk_test_51N0qXXXXXXXXXXXXXXXXXXXX');
+      const stripe = Stripe(config.stripePublishableKey);
       const elements = stripe.elements();
       const cardElement = elements.create('card');
       cardElement.mount('#card-element');
@@ -329,10 +376,51 @@
         }, 3000);
       }
 
+      // Function to set button loading state
+      function setButtonLoading(button, isLoading) {
+        if (isLoading) {
+          // Save the original text
+          button.dataset.originalText = button.textContent;
+          button.innerHTML = '<span class="spinner"></span><span class="btn-loading-text">' + button.textContent + '</span>';
+          button.classList.add('btn-loading');
+          button.disabled = true;
+        } else {
+          // Restore the original text
+          button.innerHTML = button.dataset.originalText || button.querySelector('.btn-loading-text')?.textContent || 'Register';
+          button.classList.remove('btn-loading');
+          button.disabled = false;
+        }
+      }
+
+      // Function to toggle form interactivity
+      function setFormDisabled(form, isDisabled) {
+        if (isDisabled) {
+          form.classList.add('form-disabled');
+          // Disable all inputs, selects, and buttons in the form
+          form.querySelectorAll('input, select, button, a').forEach(el => {
+            el.disabled = true;
+          });
+        } else {
+          form.classList.remove('form-disabled');
+          // Re-enable all inputs, selects, and buttons in the form
+          form.querySelectorAll('input, select, button, a').forEach(el => {
+            el.disabled = false;
+          });
+        }
+      }
+
       document
         .getElementById('registerForm')
         .addEventListener('submit', async (e) => {
           e.preventDefault();
+          
+          const form = e.target;
+          const submitButton = form.querySelector('button[type="submit"]');
+          
+          // Set loading state
+          setButtonLoading(submitButton, true);
+          setFormDisabled(form, true);
+          
           const name = document.getElementById('name').value;
           const email = document.getElementById('email').value;
           const password = document.getElementById('password').value;
@@ -369,12 +457,21 @@
             );
 
             showAlertBanner('Registration successful! Please check your email to verify your account.');
+            
+            // Add a longer delay for pro accounts to ensure Stripe webhooks complete
+            const redirectDelay = accountType === 'pro' ? 5000 : 3000;
+            showAlertBanner(`Registration successful! ${accountType === 'pro' ? 'Setting up your Pro account... ' : ''}Redirecting to login shortly.`);
+            
             setTimeout(() => {
               window.location.href = 'login.html';
-            }, 3000);
+            }, redirectDelay);
           } catch (error) {
             console.error('Error:', error);
             showAlertBanner(error.message || 'An error occurred. Please try again.', true);
+            
+            // Reset loading state
+            setButtonLoading(submitButton, false);
+            setFormDisabled(form, false);
           }
         });
 

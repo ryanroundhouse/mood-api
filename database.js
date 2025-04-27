@@ -18,9 +18,40 @@ function initializeDatabase() {
         accountLevel TEXT DEFAULT 'basic' CHECK(accountLevel IN ('basic', 'pro', 'enterprise')),
         stripeCustomerId TEXT,
         stripeSubscriptionId TEXT,
+        stripeSubscriptionStatus TEXT DEFAULT 'none',
         googlePlaySubscriptionId TEXT
       )
     `);
+
+    // Migration: add stripeSubscriptionStatus column if it doesn't exist
+    db.all("PRAGMA table_info(users)", (err, columns) => {
+      if (err) {
+        logger.error('Error checking users table columns:', err);
+        return;
+      }
+      
+      // Check if the column exists in the returned array
+      let hasSubscriptionStatus = false;
+      if (Array.isArray(columns)) {
+        for (const col of columns) {
+          if (col.name === 'stripeSubscriptionStatus') {
+            hasSubscriptionStatus = true;
+            break;
+          }
+        }
+      }
+      
+      // If the column doesn't exist, add it
+      if (!hasSubscriptionStatus) {
+        db.run("ALTER TABLE users ADD COLUMN stripeSubscriptionStatus TEXT DEFAULT 'none'", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add stripeSubscriptionStatus column:', alterErr);
+          } else {
+            logger.info('stripeSubscriptionStatus column added to users table');
+          }
+        });
+      }
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS moods (

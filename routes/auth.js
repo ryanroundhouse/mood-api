@@ -42,8 +42,10 @@ router.post(
       let stripeCustomerId = null;
       let stripeSubscriptionId = null;
       let accountLevel = 'basic';
+      let stripeSubscriptionStatus = null;
 
       if (paymentMethodId) {
+        logger.info(`Creating Stripe customer and subscription for ${email}`);
         // Create Stripe customer and handle subscription
         // Reference to stripe customer creation in server.js
         const customer = await stripe.customers.create({
@@ -70,16 +72,27 @@ router.post(
 
         stripeCustomerId = customer.id;
         stripeSubscriptionId = subscription.id;
+        stripeSubscriptionStatus = subscription.status;
+        
+        logger.info(`Stripe subscription created: ID=${subscription.id}, Status=${subscription.status}, PaymentIntentStatus=${subscription.latest_invoice?.payment_intent?.status || 'unknown'}`);
 
         if (subscription.latest_invoice.payment_intent.status === 'succeeded') {
           accountLevel = 'pro';
+          logger.info(`Setting account level to pro for ${email} - Payment succeeded`);
+        } else {
+          logger.warn(`Payment intent not succeeded for ${email}, status: ${subscription.latest_invoice.payment_intent.status}`);
+          // Keep track of subscription status even if payment is not successful yet
+          accountLevel = 'basic';
+          
+          // Make sure we always set the subscriptionStatus correctly regardless of payment state
+          stripeSubscriptionStatus = subscription.status || 'incomplete';
         }
       }
 
       // Insert user into database
       db.run(
-        `INSERT INTO users (email, name, password, verificationToken, stripeCustomerId, stripeSubscriptionId, accountLevel) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (email, name, password, verificationToken, stripeCustomerId, stripeSubscriptionId, accountLevel, stripeSubscriptionStatus) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           email,
           name,
@@ -88,14 +101,18 @@ router.post(
           stripeCustomerId,
           stripeSubscriptionId,
           accountLevel,
+          stripeSubscriptionStatus,
         ],
         function (err) {
           if (err) {
             if (err.code === 'SQLITE_CONSTRAINT') {
               return res.status(400).json({ error: 'Email already exists' });
             }
+            logger.error(`Error inserting user in database: ${err.message}`);
             return res.status(500).json({ error: 'Error registering user' });
           }
+
+          logger.info(`User inserted in database with ID ${this.lastID}. Account level: ${accountLevel}, Subscription status: ${stripeSubscriptionStatus}`);
 
           // Insert default notification settings
           db.run(

@@ -61,9 +61,36 @@ function initializeDatabase() {
         rating INTEGER NOT NULL,
         comment TEXT,
         activities TEXT,
+        timezone TEXT,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);
+
+    // Migration: add timezone column if it doesn't exist
+    db.all("PRAGMA table_info(moods)", (err, columns) => {
+      if (err) {
+        logger.error('Error checking moods table columns:', err);
+        return;
+      }
+      let hasTimezone = false;
+      if (Array.isArray(columns)) {
+        for (const col of columns) {
+          if (col.name === 'timezone') {
+            hasTimezone = true;
+            break;
+          }
+        }
+      }
+      if (!hasTimezone) {
+        db.run("ALTER TABLE moods ADD COLUMN timezone TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add timezone column:', alterErr);
+          } else {
+            logger.info('timezone column added to moods table');
+          }
+        });
+      }
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS user_settings (

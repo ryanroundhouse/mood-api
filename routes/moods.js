@@ -17,6 +17,7 @@ router.post(
     body('comment').optional().isString().trim().isLength({ max: 500 }),
     body('activities').optional().isArray(),
     body('activities.*').optional().isString().trim(),
+    body('timezone').optional().isString(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -24,16 +25,15 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    let { datetime, rating, comment, activities } = req.body;
+    let { datetime, rating, comment, activities, timezone } = req.body;
     const userId = req.user.id;
 
-    // If datetime is not provided, use current EST datetime
+    // Store datetime as provided (local time with offset), do not convert
+    // If datetime is not provided, use current local time with offset (from server)
     if (!datetime) {
-      datetime = getCurrentESTDateTime();
-    } else {
-      // If datetime is provided, parse it and convert to EST
-      datetime = convertToEST(new Date(datetime).toISOString());
+      datetime = new Date().toISOString();
     }
+    // timezone can be null if not provided
 
     // Encrypt the comment if it exists
     const encryptedComment = comment ? encrypt(comment) : null;
@@ -41,18 +41,15 @@ router.post(
     // Convert activities array to JSON string
     const activitiesJson = activities ? JSON.stringify(activities) : null;
 
-    // Get the start and end of the day for the given datetime
-    const startOfDay = new Date(datetime);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(datetime);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Get the local date part (YYYY-MM-DD) from the datetime string
+    const localDay = datetime.split('T')[0];
 
     logger.info(
-      `Searching by date: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`
+      `Searching for existing mood on local day: ${localDay}`
     );
     db.get(
-      `SELECT * FROM moods WHERE userId = ? AND datetime >= ? AND datetime <= ?`,
-      [userId, startOfDay.toISOString(), endOfDay.toISOString()],
+      `SELECT * FROM moods WHERE userId = ? AND DATE(datetime) = ?`,
+      [userId, localDay],
       (err, mood) => {
         if (err) {
           logger.error('Error creating/updating mood:', err);
@@ -61,8 +58,8 @@ router.post(
 
         if (mood) {
           db.run(
-            `UPDATE moods SET datetime = ?, rating = ?, comment = ?, activities = ? WHERE id = ?`,
-            [datetime, rating, encryptedComment, activitiesJson, mood.id],
+            `UPDATE moods SET datetime = ?, rating = ?, comment = ?, activities = ?, timezone = ? WHERE id = ?`,
+            [datetime, rating, encryptedComment, activitiesJson, timezone, mood.id],
             function (err) {
               if (err) {
                 logger.error('Error creating/updating mood:', err);
@@ -77,13 +74,14 @@ router.post(
                 rating,
                 comment, // Return the unencrypted comment to the client
                 activities,
+                timezone,
               });
             }
           );
         } else {
           db.run(
-            `INSERT INTO moods (userId, datetime, rating, comment, activities) VALUES (?, ?, ?, ?, ?)`,
-            [userId, datetime, rating, encryptedComment, activitiesJson],
+            `INSERT INTO moods (userId, datetime, rating, comment, activities, timezone) VALUES (?, ?, ?, ?, ?, ?)`,
+            [userId, datetime, rating, encryptedComment, activitiesJson, timezone],
             function (err) {
               if (err) {
                 logger.error('Error creating/updating mood:', err);
@@ -98,6 +96,7 @@ router.post(
                 rating,
                 comment, // Return the unencrypted comment to the client
                 activities,
+                timezone,
               });
             }
           );
@@ -115,6 +114,7 @@ router.post(
     body('comment').optional().isString().trim().isLength({ max: 500 }),
     body('activities').optional().isArray(),
     body('activities.*').optional().isString().trim(),
+    body('timezone').optional().isString(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -123,8 +123,10 @@ router.post(
     }
 
     const { authCode } = req.params;
-    const { rating, comment, activities } = req.body;
-    const datetime = getCurrentESTDateTime();
+    const { rating, comment, activities, timezone } = req.body;
+    // Store datetime as provided (local time, no offset)
+    let datetime = req.body.datetime || new Date().toISOString().slice(0, 19);
+    const localDay = datetime.split('T')[0];
 
     // Encrypt the comment if it exists
     const encryptedComment = comment ? encrypt(comment) : null;
@@ -160,11 +162,10 @@ router.post(
 
         logger.info(`Posting mood for user ${userId} at ${datetime}`);
 
-        // Check if a mood already exists for this user on this day
-        const today = new Date(datetime).toISOString().split('T')[0];
+        // Check if a mood already exists for this user on this local day
         db.get(
-          `SELECT id FROM moods WHERE userId = ? AND DATE(datetime) = DATE(?)`,
-          [userId, today],
+          `SELECT id FROM moods WHERE userId = ? AND DATE(datetime) = ?`,
+          [userId, localDay],
           (err, row) => {
             if (err) {
               logger.error('Error checking existing mood:', err);
@@ -176,8 +177,8 @@ router.post(
             if (row) {
               // Update existing mood
               db.run(
-                `UPDATE moods SET rating = ?, comment = ?, datetime = ?, activities = ? WHERE id = ?`,
-                [rating, encryptedComment, datetime, activitiesJson, row.id],
+                `UPDATE moods SET rating = ?, comment = ?, datetime = ?, activities = ?, timezone = ? WHERE id = ?`,
+                [rating, encryptedComment, datetime, activitiesJson, timezone, row.id],
                 (updateErr) => {
                   if (updateErr) {
                     logger.error('Error updating mood:', updateErr);
@@ -192,8 +193,8 @@ router.post(
             } else {
               // Insert new mood
               db.run(
-                `INSERT INTO moods (userId, datetime, rating, comment, activities) VALUES (?, ?, ?, ?, ?)`,
-                [userId, datetime, rating, encryptedComment, activitiesJson],
+                `INSERT INTO moods (userId, datetime, rating, comment, activities, timezone) VALUES (?, ?, ?, ?, ?, ?)`,
+                [userId, datetime, rating, encryptedComment, activitiesJson, timezone],
                 (insertErr) => {
                   if (insertErr) {
                     logger.error('Error posting mood:', insertErr);

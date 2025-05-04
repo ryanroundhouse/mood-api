@@ -843,10 +843,20 @@
           ).map((checkbox) => checkbox.value);
 
           try {
+            // Get local datetime string (YYYY-MM-DDTHH:mm:ss)
+            const now = new Date();
+            const localDateTime = now.getFullYear() + '-' +
+              String(now.getMonth() + 1).padStart(2, '0') + '-' +
+              String(now.getDate()).padStart(2, '0') + 'T' +
+              String(now.getHours()).padStart(2, '0') + ':' +
+              String(now.getMinutes()).padStart(2, '0') + ':' +
+              String(now.getSeconds()).padStart(2, '0');
             await authenticatedApiCall('/api/mood', 'POST', {
+              datetime: localDateTime,
               rating: parseInt(rating),
               comment: comment,
               activities: selectedActivities,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             });
 
             showAlertBanner('Mood submitted successfully!');
@@ -1031,11 +1041,19 @@
       }
 
       function submitMood(date, rating, comment, activities, bubble) {
+        // Format date as local datetime string (YYYY-MM-DDTHH:mm:ss)
+        const localDateTime = date.getFullYear() + '-' +
+          String(date.getMonth() + 1).padStart(2, '0') + '-' +
+          String(date.getDate()).padStart(2, '0') + 'T' +
+          String(date.getHours()).padStart(2, '0') + ':' +
+          String(date.getMinutes()).padStart(2, '0') + ':' +
+          String(date.getSeconds()).padStart(2, '0');
         authenticatedApiCall('/api/mood', 'POST', {
-          datetime: date.toISOString(),
+          datetime: localDateTime,
           rating: parseInt(rating),
           comment: comment,
           activities: activities,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         })
           .then(() => {
             showAlertBanner('Mood submitted successfully!');

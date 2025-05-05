@@ -281,8 +281,12 @@ def generate_mood_summary(user_id, start_date, end_date):
     data = []
     for row in cursor.fetchall():
         datetime_str, rating, encrypted_comment, activities_str = row
+        dt = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+        # Make all datetimes offset-naive (local time)
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
         entry = {
-            'datetime': datetime.fromisoformat(datetime_str.replace('Z', '+00:00')),
+            'datetime': dt,
             'rating': rating,
             'comment': decrypt(encrypted_comment) if encrypted_comment else None,
             'activities': json.loads(activities_str) if activities_str else []

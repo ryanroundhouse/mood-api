@@ -177,8 +177,8 @@ def send_email(to_email, user_id, auth_code):
         logging.info(f"Unsubscribe link created: {unsubscribe_link}")
     except Exception as e:
         logging.error(f"Error generating unsubscribe token: {str(e)}")
-        unsubscribe_link = f"{BASE_URL}/settings"  # Fallback to settings page
-        unsubscribe_all_link = f"{BASE_URL}/settings"
+        unsubscribe_link = f"{BASE_URL}/account-settings.html"  # Fallback to settings page
+        unsubscribe_all_link = f"{BASE_URL}/account-settings.html"
     
     logging.info(f"Building email HTML for user {user_id}")
     html_content = """
@@ -274,10 +274,10 @@ def send_goodbye_email(to_email, user_id):
     # Get or create unsubscribe token and build link
     try:
         unsubscribe_token = get_or_create_unsubscribe_token(user_id)
-        resubscribe_link = f"{BASE_URL}/settings"
+        resubscribe_link = f"{BASE_URL}/account-settings.html"
     except Exception as e:
         logging.error(f"Error generating unsubscribe token for goodbye email: {str(e)}")
-        resubscribe_link = f"{BASE_URL}/settings"
+        resubscribe_link = f"{BASE_URL}/account-settings.html"
     
     html_content = f"""
     <html lang="en">

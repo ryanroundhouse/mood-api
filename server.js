@@ -66,6 +66,10 @@ try {
   const database = require('./database');
   console.log('✓ database loaded');
   
+  console.log('Loading analytics...');
+  const analytics = require('./analytics');
+  console.log('✓ analytics loaded');
+  
   console.log('Loading logger...');
   const logger = require('./utils/logger');
   console.log('✓ logger loaded');
@@ -109,6 +113,11 @@ try {
   // Initialize database
   database.initializeDatabase();
   console.log('✓ Database initialized');
+
+  console.log('Initializing analytics database...');
+  // Initialize analytics database
+  analytics.initializeAnalyticsDatabase();
+  console.log('✓ Analytics database initialized');
 
   // Trust proxy settings (add this before other middleware)
   app.set('trust proxy', 1);

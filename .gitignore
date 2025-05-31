@@ -93,6 +93,7 @@ Thumbs.db
 # other stuff
 ecosystem.config.js
 database.sqlite
+analytics.sqlite
 scripts/my_env
 .venv
 moodful-gcloud-api-key.json

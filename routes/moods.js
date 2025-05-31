@@ -6,6 +6,7 @@ const { encrypt, decrypt } = require('../utils/encryption');
 const { getCurrentESTDateTime, convertToEST } = require('../utils/datetime');
 const logger = require('../utils/logger');
 const { db } = require('../database');
+const { trackMoodSubmission } = require('../analytics');
 
 // POST mood when authenticated
 router.post(
@@ -18,6 +19,7 @@ router.post(
     body('activities').optional().isArray(),
     body('activities.*').optional().isString().trim(),
     body('timezone').optional().isString(),
+    body('source').optional().isString().isIn(['dashboard', 'android', 'ios']),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -25,8 +27,11 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    let { datetime, rating, comment, activities, timezone } = req.body;
+    let { datetime, rating, comment, activities, timezone, source } = req.body;
     const userId = req.user.id;
+
+    // Default source to 'dashboard' if not provided for backward compatibility
+    source = source || 'dashboard';
 
     // Store datetime as provided (local time with offset), do not convert
     // If datetime is not provided, use current local time with offset (from server)
@@ -43,6 +48,19 @@ router.post(
 
     // Get the local date part (YYYY-MM-DD) from the datetime string
     const localDay = datetime.split('T')[0];
+
+    // Helper function to track analytics
+    const trackAnalytics = () => {
+      trackMoodSubmission({
+        userId,
+        submissionDatetime: datetime,
+        source,
+        comment,
+        activities: activities || []
+      }).catch(err => {
+        logger.error('Failed to track mood submission analytics:', err);
+      });
+    };
 
     logger.info(
       `Searching for existing mood on local day: ${localDay}`
@@ -67,6 +85,7 @@ router.post(
               }
 
               logger.info(`Mood updated successfully for user: ${userId}`);
+              trackAnalytics();
               res.status(201).json({
                 id: mood.id,
                 userId,
@@ -89,6 +108,7 @@ router.post(
               }
 
               logger.info(`Mood created successfully for user: ${userId}`);
+              trackAnalytics();
               res.status(201).json({
                 id: this.lastID,
                 userId,
@@ -187,6 +207,16 @@ router.post(
                       .json({ error: 'Error updating mood' });
                   }
                   logger.info(`Mood updated successfully for user ${userId}`);
+                  // Track analytics for email source
+                  trackMoodSubmission({
+                    userId,
+                    submissionDatetime: datetime,
+                    source: 'email',
+                    comment,
+                    activities: activities || []
+                  }).catch(err => {
+                    logger.error('Failed to track mood submission analytics:', err);
+                  });
                   deleteAuthCodeAndRespond('Mood updated successfully');
                 }
               );
@@ -203,6 +233,16 @@ router.post(
                       .json({ error: 'Error posting mood' });
                   }
                   logger.info(`Mood posted successfully for user ${userId}`);
+                  // Track analytics for email source
+                  trackMoodSubmission({
+                    userId,
+                    submissionDatetime: datetime,
+                    source: 'email',
+                    comment,
+                    activities: activities || []
+                  }).catch(err => {
+                    logger.error('Failed to track mood submission analytics:', err);
+                  });
                   deleteAuthCodeAndRespond('Mood posted successfully');
                 }
               );

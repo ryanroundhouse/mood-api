@@ -118,6 +118,7 @@ def get_user_moods(user_id, year, month):
         # Decrypt the comment
         decrypted_comment = decrypt(row[2]) if row[2] else None
         moods[day] = {
+            'date': dt.strftime('%Y-%m-%d'),
             'rating': row[1], 
             'comment': decrypted_comment, 
             'activities': json.loads(row[3]) if row[3] else []
@@ -499,31 +500,62 @@ def generate_mood_summary(user_id, start_date, end_date):
     return random_statistics
 
 def get_openai_insights(moods):
-    current_date = datetime.now().strftime('%B %d, %Y')
+    current_date = datetime.now().strftime('%Y-%m-%d')
     prompt = """
-    Assume the current date is {current_date}.
-    Given the sample data, answer some questions for me. Your response must be in json format with 'Answer#' as the key and the answer as the value for that key!
-    The 'Answer#' refers to the question number I've asked you to answer. Mood ratings are on a scale from 0-4. Activities could be considered tags or just things of note that took place that day. Comments are freeform text optionally input from the user.
-    Phrase the answers as if you're talking to the person who's mood entries are being analyzed.
+    Assume today's date is {current_date}.
 
-    Answer1: What are some insights you can find with how the comments, activities, and mood ratings relate to one another.
+    You will be given mood data in JSON format for the previous month. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
 
-    Answer2: What are some trends and correlations in the data do you see from the previous month's entries?
+    **Instructions:**
 
-    Answer3: What's a small win that happened in the past week? The answer to this question should include encouragement to celebrate that small win.  IT MUST PROPOSE A WIN FROM THE PAST WEEK, NOT JUST ANYTIME.
+    - ALL answers should be roughly 50 to 80 words.
+    - Answers must be clear, concise, and supported by specific examples or evidence from the data.
+    - Do not repeat the questions.
+    - Only output JSON, no extra text or explanation.
+    - For each answer, reference at least one relevant date and activity/comment from the sample data.
+    - For predictions, only give positive predictions based on trends you observe.
+    - For 'small win', it must be a positive event from the last 7 days, with encouragement to celebrate it.
+    - For 'prediction', it must be a positive prediction for the upcoming week, based on recent patterns.
+    - For 'insights', it must be a concise summary of the insights you can find about how comments, activities, and mood ratings relate to one another.
+    - For 'trends', it must be a concise summary of the most significant trends or correlations in the data from the past month.
 
-    Answer4: What's a prediction for the upcoming week you would make for moods (positive prediction only - nothing negative please).
+    **Questions:**
 
-    Sample data:
+    1. What insights can you find about how comments, activities, and mood ratings relate to one another?
+    2. What are the most significant trends or correlations in the data from the past month?
+    3. Identify a small win from the past week. Include encouragement to celebrate this.
+    4. Predict one positive thing that might happen with your moods next week, based on recent patterns.
+
+    **Details:**
+    - Mood ratings are on a scale from 0-4 where 0 is the worst mood and 4 is the best mood.
+    - Activities are tags for activities, aspects, observations, etc. that the user can associate with mood entries outside of their comment.
+    - Comments are freeform text optionally input by the user about their day.
+
+    # Mood Data:
+
     {moods}
+
+    # Example Output:
+
+    {{
+        "Answer1": "You tend to rate your mood higher on days with social activities like 'connected' (e.g., May 1, 17, 19, 28). Negative work events sometimes coincide with lower mood ratings.",
+        "Answer2": "This month, mood ratings remained stable (mostly 3s), with occasional 4s on weekends. 'Worked out' is the most common positive activity. Mood dips slightly after stressful work discussions.",
+        "Answer3": "On May 28, you went out for drinks with a friend and played hockey well—great job maintaining social connections and active hobbies! Celebrate this momentum.",
+        "Answer4": "If you continue your workout and social habits, expect more positive days next week, especially after team activities."
+    }}
     """
 
     prompt = prompt.format(moods=json.dumps(moods, indent=2), current_date=current_date)
+    
+    print("Sending prompt to OpenAI:")
+    print(prompt)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that analyzes mood data."},
+            {"role": "system", "content": "You are an expert mood data analyst. You analyze mood journal entries for trends, patterns, and \
+             actionable insights. Your style is concise, supportive, and focused on clarity. When presenting findings, use evidence from the data. \
+             Always output JSON only, with no extra text."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -536,6 +568,10 @@ def get_openai_insights(moods):
 
     try:
         content = json.loads(raw_content)
+
+        print("OpenAI Response:")
+        print(content)
+        
     except Exception:
         return [{"name": "AI Insights Error", "description": "Could not parse OpenAI response."}]
 

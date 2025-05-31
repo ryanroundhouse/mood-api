@@ -50,12 +50,11 @@ class MoodfulAnalytics:
                     pass
 
     def get_date_ranges(self):
-        """Generate commonly used date ranges for analysis"""
+        """Generate commonly used date ranges for analysis - all ranges exclude the current day"""
         now = datetime.now()
         today = now.date()
         
         return {
-            'today': (today, today + timedelta(days=1)),
             'yesterday': (today - timedelta(days=1), today),
             'past_7_days': (today - timedelta(days=7), today),
             'past_30_days': (today - timedelta(days=30), today),
@@ -143,7 +142,7 @@ class MoodfulAnalytics:
         }
 
     def get_engagement_metrics(self):
-        """Get detailed engagement metrics from analytics database"""
+        """Get detailed engagement metrics from analytics database with week-over-week platform analysis"""
         cursor = self.analytics_conn.cursor()
         
         # Check if analytics table exists
@@ -151,7 +150,151 @@ class MoodfulAnalytics:
         if not cursor.fetchone():
             return {'error': 'Analytics table not found'}
         
-        # Submission volume by time period
+        # Calculate date ranges for current week and previous week
+        today = datetime.now().date()
+        # Find the most recent Sunday (start of current week)
+        days_since_sunday = today.weekday() + 1 if today.weekday() != 6 else 0
+        current_week_start = today - timedelta(days=days_since_sunday)
+        current_week_end = today  # Exclude current day to reflect completed days only
+        
+        # Previous week
+        previous_week_start = current_week_start - timedelta(days=7)
+        previous_week_end = current_week_start
+        
+        def get_platform_stats_for_period(start_date, end_date):
+            """Get platform usage stats for a specific period"""
+            cursor.execute("""
+                SELECT source, 
+                       COUNT(*) as submission_count,
+                       COUNT(DISTINCT user_id) as unique_users
+                FROM mood_submissions
+                WHERE DATE(submission_datetime) >= ? AND DATE(submission_datetime) < ?
+                GROUP BY source
+                ORDER BY submission_count DESC
+            """, (start_date.isoformat(), end_date.isoformat()))
+            
+            platform_data = {}
+            for row in cursor.fetchall():
+                source, count, users = row
+                platform_data[source] = {
+                    'submission_count': count,
+                    'unique_users': users
+                }
+            return platform_data
+        
+        # Get platform stats for different periods
+        current_week_platforms = get_platform_stats_for_period(current_week_start, current_week_end)
+        previous_week_platforms = get_platform_stats_for_period(previous_week_start, previous_week_end)
+        
+        # Get all-time platform stats
+        cursor.execute("""
+            SELECT source, 
+                   COUNT(*) as submission_count,
+                   COUNT(DISTINCT user_id) as unique_users,
+                   AVG(comment_length) as avg_comment_length,
+                   AVG(total_tags) as avg_tags_per_submission
+            FROM mood_submissions
+            GROUP BY source
+            ORDER BY submission_count DESC
+        """)
+        
+        all_time_platforms = {}
+        for row in cursor.fetchall():
+            source, count, users, avg_comment, avg_tags = row
+            all_time_platforms[source] = {
+                'submission_count': count,
+                'unique_users': users,
+                'avg_comment_length': round(avg_comment or 0, 2),
+                'avg_tags_per_submission': round(avg_tags or 0, 2)
+            }
+        
+        # Get all unique platforms
+        all_platforms = set()
+        all_platforms.update(current_week_platforms.keys())
+        all_platforms.update(previous_week_platforms.keys())
+        all_platforms.update(all_time_platforms.keys())
+        
+        # Normalize data - ensure all platforms exist in all periods
+        def normalize_platform_data(platform_data, platform_list):
+            normalized = {}
+            for platform in platform_list:
+                if platform in platform_data:
+                    normalized[platform] = platform_data[platform]
+                else:
+                    normalized[platform] = {'submission_count': 0, 'unique_users': 0}
+            return normalized
+        
+        current_week_platforms = normalize_platform_data(current_week_platforms, all_platforms)
+        previous_week_platforms = normalize_platform_data(previous_week_platforms, all_platforms)
+        
+        # Calculate changes for each platform
+        def calculate_platform_change(current, previous):
+            """Calculate absolute and percentage change for platform metrics"""
+            absolute_change = current - previous
+            if previous == 0:
+                percentage_change = 0 if current == 0 else 100
+            else:
+                percentage_change = round((absolute_change / previous) * 100, 1)
+            return {
+                'absolute': absolute_change,
+                'percentage': percentage_change
+            }
+        
+        platform_changes = {}
+        for platform in all_platforms:
+            current_count = current_week_platforms[platform]['submission_count']
+            previous_count = previous_week_platforms[platform]['submission_count']
+            platform_changes[platform] = calculate_platform_change(current_count, previous_count)
+        
+        # Create grouped bar chart showing current week vs previous week
+        platform_names = [platform.title() for platform in all_platforms]
+        current_week_data = [current_week_platforms[platform]['submission_count'] for platform in all_platforms]
+        previous_week_data = [previous_week_platforms[platform]['submission_count'] for platform in all_platforms]
+        
+        # Only create chart if we have data
+        if any(current_week_data) or any(previous_week_data):
+            fig_platform = go.Figure()
+            
+            # Add bars for each time period
+            fig_platform.add_trace(go.Bar(
+                name='Current Week',
+                x=platform_names,
+                y=current_week_data,
+                marker_color='#3498db',
+                text=current_week_data,
+                textposition='auto'
+            ))
+            
+            fig_platform.add_trace(go.Bar(
+                name='Previous Week',
+                x=platform_names,
+                y=previous_week_data,
+                marker_color='#95a5a6',
+                text=previous_week_data,
+                textposition='auto'
+            ))
+            
+            fig_platform.update_layout(
+                title="Platform Usage Comparison (Current vs Previous Week)",
+                yaxis_title="Number of Submissions",
+                xaxis_title="Platform",
+                font=dict(size=12),
+                margin=dict(t=60, b=40, l=40, r=40),
+                barmode='group',  # Group bars side by side
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            platform_chart = self.create_chart_references(fig_platform, 'platform_usage')
+        else:
+            platform_chart = None
+        
+        # Submission volume by time period (keep existing functionality)
         volume_stats = {}
         for period, (start_date, end_date) in self.date_ranges.items():
             cursor.execute("""
@@ -167,50 +310,6 @@ class MoodfulAnalytics:
                 'unique_users': result[1],
                 'avg_submissions_per_user': result[0] / result[1] if result[1] > 0 else 0
             }
-        
-        # Platform usage distribution
-        cursor.execute("""
-            SELECT source, 
-                   COUNT(*) as submission_count,
-                   COUNT(DISTINCT user_id) as unique_users,
-                   AVG(comment_length) as avg_comment_length,
-                   AVG(total_tags) as avg_tags_per_submission
-            FROM mood_submissions
-            GROUP BY source
-            ORDER BY submission_count DESC
-        """)
-        
-        platform_stats = {}
-        platform_data = []
-        for row in cursor.fetchall():
-            source, count, users, avg_comment, avg_tags = row
-            platform_stats[source] = {
-                'submission_count': count,
-                'unique_users': users,
-                'avg_comment_length': round(avg_comment or 0, 2),
-                'avg_tags_per_submission': round(avg_tags or 0, 2)
-            }
-            platform_data.append({
-                'platform': source.title(),
-                'submissions': count,
-                'users': users
-            })
-        
-        # Create platform usage chart
-        if platform_data:
-            df_platform = pd.DataFrame(platform_data)
-            fig_platform = px.bar(df_platform, x='platform', y='submissions',
-                                 title='Submissions by Platform',
-                                 color='platform',
-                                 labels={'submissions': 'Total Submissions', 'platform': 'Platform'})
-            fig_platform.update_layout(
-                showlegend=False,
-                font=dict(size=12),
-                margin=dict(t=60, b=40, l=40, r=40)
-            )
-            platform_chart = self.create_chart_references(fig_platform, 'platform_usage')
-        else:
-            platform_chart = None
         
         # Daily activity trend (last 30 days)
         start_date = self.date_ranges['past_30_days'][0]
@@ -256,7 +355,14 @@ class MoodfulAnalytics:
         
         return {
             'volume_stats': volume_stats,
-            'platform_stats': platform_stats,
+            'current_week_platforms': current_week_platforms,
+            'previous_week_platforms': previous_week_platforms,
+            'all_time_platforms': all_time_platforms,
+            'platform_changes': platform_changes,
+            'date_ranges': {
+                'current_week': f"{current_week_start.strftime('%m/%d')} - {(today - timedelta(days=1)).strftime('%m/%d')}",
+                'previous_week': f"{previous_week_start.strftime('%m/%d')} - {(previous_week_end - timedelta(days=1)).strftime('%m/%d')}"
+            },
             'daily_data': daily_data,
             'charts': {
                 'platform_usage': platform_chart,
@@ -265,10 +371,67 @@ class MoodfulAnalytics:
         }
 
     def get_content_quality_metrics(self):
-        """Analyze content quality and user behavior"""
+        """Analyze content quality and user behavior with week-over-week comparison"""
         cursor = self.analytics_conn.cursor()
         
-        # Overall content quality metrics
+        # Check if analytics table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='mood_submissions'")
+        if not cursor.fetchone():
+            return {'error': 'Analytics table not found'}
+        
+        # Calculate date ranges for current week and previous week
+        today = datetime.now().date()
+        # Find the most recent Sunday (start of current week)
+        days_since_sunday = today.weekday() + 1 if today.weekday() != 6 else 0
+        current_week_start = today - timedelta(days=days_since_sunday)
+        current_week_end = today  # Exclude current day to reflect completed days only
+        
+        # Previous week
+        previous_week_start = current_week_start - timedelta(days=7)
+        previous_week_end = current_week_start
+        
+        def get_week_quality_stats(start_date, end_date):
+            """Get content quality stats for a specific week"""
+            cursor.execute("""
+                SELECT AVG(comment_length) as avg_comment_length,
+                       AVG(total_tags) as avg_total_tags,
+                       AVG(custom_tags_count) as avg_custom_tags,
+                       COUNT(*) as total_submissions,
+                       SUM(CASE WHEN comment_length > 0 THEN 1 ELSE 0 END) as submissions_with_comments,
+                       SUM(CASE WHEN total_tags > 0 THEN 1 ELSE 0 END) as submissions_with_tags,
+                       SUM(CASE WHEN custom_tags_count > 0 THEN 1 ELSE 0 END) as submissions_with_custom_tags
+                FROM mood_submissions
+                WHERE DATE(submission_datetime) >= ? AND DATE(submission_datetime) < ?
+            """, (start_date.isoformat(), end_date.isoformat()))
+            
+            result = cursor.fetchone()
+            if result and result[3] > 0:  # total_submissions > 0
+                avg_comment, avg_tags, avg_custom, total, with_comments, with_tags, with_custom = result
+                return {
+                    'avg_comment_length': round(avg_comment or 0, 2),
+                    'avg_total_tags': round(avg_tags or 0, 2),
+                    'avg_custom_tags': round(avg_custom or 0, 2),
+                    'comment_rate_percentage': round(with_comments / total * 100, 2) if total > 0 else 0,
+                    'tag_usage_rate_percentage': round(with_tags / total * 100, 2) if total > 0 else 0,
+                    'custom_tag_usage_rate_percentage': round(with_custom / total * 100, 2) if total > 0 else 0,
+                    'total_submissions': total
+                }
+            else:
+                return {
+                    'avg_comment_length': 0,
+                    'avg_total_tags': 0,
+                    'avg_custom_tags': 0,
+                    'comment_rate_percentage': 0,
+                    'tag_usage_rate_percentage': 0,
+                    'custom_tag_usage_rate_percentage': 0,
+                    'total_submissions': 0
+                }
+        
+        # Get stats for both weeks
+        current_week_stats = get_week_quality_stats(current_week_start, current_week_end)
+        previous_week_stats = get_week_quality_stats(previous_week_start, previous_week_end)
+        
+        # Get all-time stats
         cursor.execute("""
             SELECT AVG(comment_length) as avg_comment_length,
                    AVG(total_tags) as avg_total_tags,
@@ -281,46 +444,138 @@ class MoodfulAnalytics:
         """)
         
         result = cursor.fetchone()
-        if result:
+        if result and result[3] > 0:  # total_submissions > 0
             avg_comment, avg_tags, avg_custom, total, with_comments, with_tags, with_custom = result
-            
-            quality_stats = {
+            all_time_stats = {
                 'avg_comment_length': round(avg_comment or 0, 2),
                 'avg_total_tags': round(avg_tags or 0, 2),
                 'avg_custom_tags': round(avg_custom or 0, 2),
                 'comment_rate_percentage': round(with_comments / total * 100, 2) if total > 0 else 0,
                 'tag_usage_rate_percentage': round(with_tags / total * 100, 2) if total > 0 else 0,
-                'custom_tag_usage_rate_percentage': round(with_custom / total * 100, 2) if total > 0 else 0
+                'custom_tag_usage_rate_percentage': round(with_custom / total * 100, 2) if total > 0 else 0,
+                'total_submissions': total
             }
-            
-            # Create content quality visualization
-            metrics = ['Comments', 'Tags', 'Custom Tags']
-            percentages = [
-                quality_stats['comment_rate_percentage'],
-                quality_stats['tag_usage_rate_percentage'],
-                quality_stats['custom_tag_usage_rate_percentage']
-            ]
-            
-            fig_quality = go.Figure(data=[
-                go.Bar(x=metrics, y=percentages, 
-                       marker_color=['#3498db', '#2ecc71', '#f39c12'],
-                       text=[f"{p:.1f}%" for p in percentages],
-                       textposition='auto')
-            ])
-            fig_quality.update_layout(
-                title="Content Feature Usage Rates",
-                yaxis_title="Usage Rate (%)",
-                font=dict(size=12),
-                margin=dict(t=60, b=40, l=40, r=40)
-            )
-            
-            quality_chart = self.create_chart_references(fig_quality, 'content_quality')
         else:
-            quality_stats = {}
-            quality_chart = None
+            all_time_stats = {
+                'avg_comment_length': 0,
+                'avg_total_tags': 0,
+                'avg_custom_tags': 0,
+                'comment_rate_percentage': 0,
+                'tag_usage_rate_percentage': 0,
+                'custom_tag_usage_rate_percentage': 0,
+                'total_submissions': 0
+            }
+        
+        # Calculate changes
+        def calculate_change(current, previous):
+            """Calculate absolute and percentage change"""
+            absolute_change = current - previous
+            if previous == 0:
+                percentage_change = 0 if current == 0 else 100
+            else:
+                percentage_change = round((absolute_change / previous) * 100, 1)
+            return {
+                'absolute': round(absolute_change, 2),
+                'percentage': percentage_change
+            }
+        
+        # Calculate changes for each metric
+        changes = {
+            'avg_comment_length': calculate_change(
+                current_week_stats['avg_comment_length'], 
+                previous_week_stats['avg_comment_length']
+            ),
+            'comment_rate_percentage': calculate_change(
+                current_week_stats['comment_rate_percentage'], 
+                previous_week_stats['comment_rate_percentage']
+            ),
+            'avg_total_tags': calculate_change(
+                current_week_stats['avg_total_tags'], 
+                previous_week_stats['avg_total_tags']
+            ),
+            'custom_tag_usage_rate_percentage': calculate_change(
+                current_week_stats['custom_tag_usage_rate_percentage'], 
+                previous_week_stats['custom_tag_usage_rate_percentage']
+            )
+        }
+        
+        # Create grouped bar chart showing all three time periods
+        metrics = ['Comments', 'Tags', 'Custom Tags']
+        
+        current_week_data = [
+            current_week_stats['comment_rate_percentage'],
+            current_week_stats['tag_usage_rate_percentage'],
+            current_week_stats['custom_tag_usage_rate_percentage']
+        ]
+        
+        previous_week_data = [
+            previous_week_stats['comment_rate_percentage'],
+            previous_week_stats['tag_usage_rate_percentage'],
+            previous_week_stats['custom_tag_usage_rate_percentage']
+        ]
+        
+        all_time_data = [
+            all_time_stats['comment_rate_percentage'],
+            all_time_stats['tag_usage_rate_percentage'],
+            all_time_stats['custom_tag_usage_rate_percentage']
+        ]
+        
+        fig_quality = go.Figure()
+        
+        # Add bars for each time period
+        fig_quality.add_trace(go.Bar(
+            name='Current Week',
+            x=metrics,
+            y=current_week_data,
+            marker_color='#3498db',
+            text=[f"{p:.1f}%" for p in current_week_data],
+            textposition='auto'
+        ))
+        
+        fig_quality.add_trace(go.Bar(
+            name='Previous Week',
+            x=metrics,
+            y=previous_week_data,
+            marker_color='#95a5a6',
+            text=[f"{p:.1f}%" for p in previous_week_data],
+            textposition='auto'
+        ))
+        
+        fig_quality.add_trace(go.Bar(
+            name='All Time',
+            x=metrics,
+            y=all_time_data,
+            marker_color='#2ecc71',
+            text=[f"{p:.1f}%" for p in all_time_data],
+            textposition='auto'
+        ))
+        
+        fig_quality.update_layout(
+            title="Content Feature Usage Rates Comparison",
+            yaxis_title="Usage Rate (%)",
+            font=dict(size=12),
+            margin=dict(t=60, b=40, l=40, r=40),
+            barmode='group',  # Group bars side by side
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        quality_chart = self.create_chart_references(fig_quality, 'content_quality')
         
         return {
-            'quality_stats': quality_stats,
+            'current_week_stats': current_week_stats,
+            'previous_week_stats': previous_week_stats,
+            'all_time_stats': all_time_stats,
+            'changes': changes,
+            'date_ranges': {
+                'current_week': f"{current_week_start.strftime('%m/%d')} - {(today - timedelta(days=1)).strftime('%m/%d')}",
+                'previous_week': f"{previous_week_start.strftime('%m/%d')} - {(previous_week_end - timedelta(days=1)).strftime('%m/%d')}"
+            },
             'charts': {
                 'content_quality': quality_chart
             }
@@ -548,10 +803,11 @@ class MoodfulAnalytics:
                     padding: 40px;
                 }}
                 .kpi-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 20px;
                     margin-bottom: 40px;
+                    justify-content: space-between;
                 }}
                 .kpi-card {{
                     background: #fff;
@@ -560,6 +816,9 @@ class MoodfulAnalytics:
                     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                     border-left: 4px solid #667eea;
                     transition: transform 0.2s;
+                    flex: 1;
+                    min-width: 200px;
+                    max-width: 280px;
                 }}
                 .kpi-card:hover {{
                     transform: translateY(-2px);
@@ -601,15 +860,18 @@ class MoodfulAnalytics:
                     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 }}
                 .stats-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 20px;
+                    margin-bottom: 20px;
                 }}
                 .stats-card {{
                     background: #fff;
                     border-radius: 8px;
                     padding: 20px;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    flex: 1;
+                    min-width: 300px;
                 }}
                 .stats-card h4 {{
                     color: #667eea;
@@ -654,22 +916,22 @@ class MoodfulAnalytics:
                 <div class="content">
                     <!-- Key Performance Indicators -->
                     <div class="section">
-                        <div class="kpi-grid">
-                            <div class="kpi-card">
-                                <div class="kpi-value">{total_users:,}</div>
-                                <div class="kpi-label">Total Verified Users</div>
+                        <div class="kpi-grid" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 40px; justify-content: space-between;">
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{total_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Verified Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{past_week_users:,}</div>
-                                <div class="kpi-label">Weekly Active Users</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{past_week_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Weekly Active Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{past_month_users:,}</div>
-                                <div class="kpi-label">Monthly Active Users</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{past_month_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Monthly Active Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{week_engagement:.1f}%</div>
-                                <div class="kpi-label">Weekly Engagement Rate</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{week_engagement:.1f}%</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Weekly Engagement Rate</div>
                             </div>
                         </div>
                     </div>
@@ -679,123 +941,221 @@ class MoodfulAnalytics:
         if user_metrics.get('charts', {}).get('user_distribution'):
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">👥 User Distribution</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Account Levels</h4>
-                                <div class="stat-item">
-                                    <span>Basic Users</span>
-                                    <span>{user_metrics['user_counts']['basic']:,}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Pro Users</span>
-                                    <span>{user_metrics['user_counts']['pro']:,}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Enterprise Users</span>
-                                    <span>{user_metrics['user_counts']['enterprise']:,}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="chart-container">
-                            <img src="cid:user_distribution" alt="User Distribution Chart">
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">👥 User Distribution</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Account Levels</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Basic Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{user_metrics['user_counts']['basic']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Pro Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{user_metrics['user_counts']['pro']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Enterprise Users</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold;">{user_metrics['user_counts']['enterprise']:,}</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td width="50%"></td>
+                            </tr>
+                        </table>
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:user_distribution" alt="User Distribution Chart" style="max-width: 100%; height: auto;">
                         </div>
                     </div>
             """
         
         # Add Engagement Metrics section
         if not engagement_metrics.get('error'):
+            current_week_platforms = engagement_metrics.get('current_week_platforms', {})
+            previous_week_platforms = engagement_metrics.get('previous_week_platforms', {})
+            all_time_platforms = engagement_metrics.get('all_time_platforms', {})
+            platform_changes = engagement_metrics.get('platform_changes', {})
+            date_ranges = engagement_metrics.get('date_ranges', {})
+            
+            def format_platform_change(change_data):
+                """Format platform change with color coding"""
+                absolute = change_data['absolute']
+                percentage = change_data['percentage']
+                
+                # Determine color based on change direction
+                if absolute > 0:
+                    color = "#28a745"  # Green for positive
+                    symbol = "+"
+                elif absolute < 0:
+                    color = "#dc3545"  # Red for negative  
+                    symbol = ""
+                else:
+                    color = "#6c757d"  # Gray for no change
+                    symbol = ""
+                
+                return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute} ({symbol}{percentage:.1f}%)</span>'
+            
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">📈 Engagement Metrics</h2>
-                        <div class="stats-grid">
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">📈 Engagement Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="100%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="10" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; font-weight: bold; width: 25%;">Platform</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Current Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges.get('current_week', '')})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Previous Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges.get('previous_week', '')})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Change</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 15%;">All Time</td>
+                                        </tr>
             """
             
-            # Platform statistics
-            if engagement_metrics.get('platform_stats'):
-                html_content += """
-                            <div class="stats-card">
-                                <h4>Platform Usage</h4>
-                """
-                for platform, stats in engagement_metrics['platform_stats'].items():
-                    html_content += f"""
-                                <div class="stat-item">
-                                    <span>{platform.title()}</span>
-                                    <span>{stats['submission_count']:,} submissions</span>
-                                </div>
-                    """
-                html_content += "</div>"
+            # Get all platforms and sort by all-time submission count
+            all_platforms = set()
+            all_platforms.update(current_week_platforms.keys())
+            all_platforms.update(previous_week_platforms.keys())
+            all_platforms.update(all_time_platforms.keys())
             
-            # Volume statistics for different periods
-            volume_stats = engagement_metrics.get('volume_stats', {})
-            if volume_stats:
-                html_content += """
-                            <div class="stats-card">
-                                <h4>Activity Summary</h4>
-                """
-                for period, stats in volume_stats.items():
-                    if stats['total_submissions'] > 0:
-                        html_content += f"""
-                                <div class="stat-item">
-                                    <span>{period.replace('_', ' ').title()}</span>
-                                    <span>{stats['unique_users']:,} users ({stats['total_submissions']:,} submissions)</span>
-                                </div>
-                        """
-                html_content += "</div>"
+            # Sort platforms by all-time submission count (descending)
+            sorted_platforms = sorted(all_platforms, 
+                                    key=lambda x: all_time_platforms.get(x, {}).get('submission_count', 0), 
+                                    reverse=True)
             
-            html_content += "</div>"
+            # Add rows for each platform
+            for i, platform in enumerate(sorted_platforms):
+                current_count = current_week_platforms.get(platform, {}).get('submission_count', 0)
+                previous_count = previous_week_platforms.get(platform, {}).get('submission_count', 0)
+                all_time_count = all_time_platforms.get(platform, {}).get('submission_count', 0)
+                change = platform_changes.get(platform, {'absolute': 0, 'percentage': 0})
+                
+                # Skip platforms with no all-time data
+                if all_time_count == 0:
+                    continue
+                
+                border_style = "border-bottom: 1px solid #eee;" if i < len(sorted_platforms) - 1 else ""
+                
+                html_content += f"""
+                                        <tr>
+                                            <td style="padding: 12px 15px; {border_style}">{platform.title()}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold;">{current_count:,}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold;">{previous_count:,}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center;">{format_platform_change(change)}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold; color: #2ecc71;">{all_time_count:,}</td>
+                                        </tr>
+                """
+            
+            html_content += """
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+            """
             
             # Add platform usage chart
             if engagement_metrics.get('charts', {}).get('platform_usage'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:platform_usage" alt="Platform Usage Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:platform_usage" alt="Platform Usage Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
             # Add daily activity chart
             if engagement_metrics.get('charts', {}).get('daily_activity'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:daily_activity" alt="Daily Activity Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:daily_activity" alt="Daily Activity Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
             html_content += "</div>"
         
         # Add Content Quality section
-        if not content_metrics.get('error') and content_metrics.get('quality_stats'):
-            quality_stats = content_metrics['quality_stats']
+        if not content_metrics.get('error') and content_metrics.get('current_week_stats'):
+            current_week_stats = content_metrics['current_week_stats']
+            previous_week_stats = content_metrics['previous_week_stats']
+            all_time_stats = content_metrics['all_time_stats']
+            changes = content_metrics['changes']
+            date_ranges = content_metrics['date_ranges']
+            
+            def format_change(change_data, is_percentage=False):
+                """Format change with color coding"""
+                absolute = change_data['absolute']
+                percentage = change_data['percentage']
+                
+                # Determine color based on change direction
+                if absolute > 0:
+                    color = "#28a745"  # Green for positive
+                    symbol = "+"
+                elif absolute < 0:
+                    color = "#dc3545"  # Red for negative  
+                    symbol = ""
+                else:
+                    color = "#6c757d"  # Gray for no change
+                    symbol = ""
+                
+                if is_percentage:
+                    return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute:.1f}pp ({symbol}{percentage:.1f}%)</span>'
+                else:
+                    return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute} ({symbol}{percentage:.1f}%)</span>'
+            
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">✍️ Content Quality Metrics</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Content Engagement</h4>
-                                <div class="stat-item">
-                                    <span>Average Comment Length</span>
-                                    <span>{quality_stats['avg_comment_length']} characters</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Average Tags per Submission</span>
-                                    <span>{quality_stats['avg_total_tags']}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Comment Usage Rate</span>
-                                    <span>{quality_stats['comment_rate_percentage']}%</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Custom Tag Usage Rate</span>
-                                    <span>{quality_stats['custom_tag_usage_rate_percentage']}%</span>
-                                </div>
-                            </div>
-                        </div>
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">✍️ Content Quality Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="100%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="10" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; font-weight: bold; width: 25%;">Metric</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Current Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges['current_week']})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Previous Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges['previous_week']})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Change</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 15%;">All Time</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Average Comment Length</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['avg_comment_length']} chars</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['avg_comment_length']} chars</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['avg_comment_length'])}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['avg_comment_length']} chars</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Comment Usage Rate</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['comment_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['comment_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['comment_rate_percentage'], is_percentage=True)}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['comment_rate_percentage']}%</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Average Tags per Submission</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['avg_total_tags']}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['avg_total_tags']}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['avg_total_tags'])}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['avg_total_tags']}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px;">Custom Tag Usage Rate</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold;">{current_week_stats['custom_tag_usage_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold;">{previous_week_stats['custom_tag_usage_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; text-align: center;">{format_change(changes['custom_tag_usage_rate_percentage'], is_percentage=True)}</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['custom_tag_usage_rate_percentage']}%</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
             """
             
             if content_metrics.get('charts', {}).get('content_quality'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:content_quality" alt="Content Quality Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:content_quality" alt="Content Quality Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
@@ -805,34 +1165,43 @@ class MoodfulAnalytics:
         if not retention_metrics.get('error'):
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">🔄 User Retention Analysis</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Retention Breakdown</h4>
-                                <div class="stat-item">
-                                    <span>Active (Last 7 Days)</span>
-                                    <span class="positive">{retention_metrics['retention_buckets']['active_last_7_days']:,} ({retention_metrics['retention_percentages']['active_last_7_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Active (Last 30 Days)</span>
-                                    <span class="positive">{retention_metrics['retention_buckets']['active_last_30_days']:,} ({retention_metrics['retention_percentages']['active_last_30_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Dormant (30-90 Days)</span>
-                                    <span class="neutral">{retention_metrics['retention_buckets']['dormant_30_90_days']:,} ({retention_metrics['retention_percentages']['dormant_30_90_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Churned (90+ Days)</span>
-                                    <span class="negative">{retention_metrics['retention_buckets']['churned_90_plus_days']:,} ({retention_metrics['retention_percentages']['churned_90_plus_days_percentage']}%)</span>
-                                </div>
-                            </div>
-                        </div>
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">🔄 User Retention Analysis</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Retention Breakdown</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Active (Last 7 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #28a745;">{retention_metrics['retention_buckets']['active_last_7_days']:,} ({retention_metrics['retention_percentages']['active_last_7_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Active (Last 30 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #28a745;">{retention_metrics['retention_buckets']['active_last_30_days']:,} ({retention_metrics['retention_percentages']['active_last_30_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Dormant (30-90 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #6c757d;">{retention_metrics['retention_buckets']['dormant_30_90_days']:,} ({retention_metrics['retention_percentages']['dormant_30_90_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Churned (90+ Days)</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold; color: #dc3545;">{retention_metrics['retention_buckets']['churned_90_plus_days']:,} ({retention_metrics['retention_percentages']['churned_90_plus_days_percentage']}%)</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td width="50%"></td>
+                            </tr>
+                        </table>
             """
             
             if retention_metrics.get('charts', {}).get('retention_status'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:retention_status" alt="Retention Status Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:retention_status" alt="Retention Status Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
@@ -842,36 +1211,59 @@ class MoodfulAnalytics:
         if not business_metrics.get('error'):
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">💼 Business Metrics</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Key Business Indicators</h4>
-                                <div class="stat-item">
-                                    <span>Monthly Active Users</span>
-                                    <span>{business_metrics['monthly_active_users']:,}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Average Daily Active Users</span>
-                                    <span>{business_metrics['avg_daily_active_users']}</span>
-                                </div>
-                            </div>
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">💼 Business Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Key Business Indicators</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Monthly Active Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{business_metrics['monthly_active_users']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Average Daily Active Users</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold;">{business_metrics['avg_daily_active_users']}</td>
+                                        </tr>
+                                    </table>
+                                </td>
             """
             
             if business_metrics.get('active_users_by_account_level'):
                 html_content += """
-                            <div class="stats-card">
-                                <h4>Active Users by Account Level</h4>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Active Users by Account Level</h4>
+                                            </td>
+                                        </tr>
                 """
-                for level, count in business_metrics['active_users_by_account_level'].items():
+                level_list = list(business_metrics['active_users_by_account_level'].items())
+                for i, (level, count) in enumerate(level_list):
+                    border_style = "border-bottom: 1px solid #eee;" if i < len(level_list) - 1 else ""
                     html_content += f"""
-                                <div class="stat-item">
-                                    <span>{level.title()}</span>
-                                    <span>{count:,} users</span>
-                                </div>
+                                        <tr>
+                                            <td style="padding: 10px 15px; {border_style}">{level.title()}</td>
+                                            <td style="padding: 10px 15px; {border_style} text-align: right; font-weight: bold;">{count:,} users</td>
+                                        </tr>
                     """
-                html_content += "</div>"
+                html_content += """
+                                    </table>
+                                </td>
+                """
+            else:
+                html_content += '<td width="50%"></td>'
             
-            html_content += "</div></div>"
+            html_content += """
+                            </tr>
+                        </table>
+                    </div>
+            """
         
         # Footer
         html_content += f"""
@@ -951,10 +1343,11 @@ class MoodfulAnalytics:
                     padding: 40px;
                 }}
                 .kpi-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 20px;
                     margin-bottom: 40px;
+                    justify-content: space-between;
                 }}
                 .kpi-card {{
                     background: #fff;
@@ -963,6 +1356,9 @@ class MoodfulAnalytics:
                     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                     border-left: 4px solid #667eea;
                     transition: transform 0.2s;
+                    flex: 1;
+                    min-width: 200px;
+                    max-width: 280px;
                 }}
                 .kpi-card:hover {{
                     transform: translateY(-2px);
@@ -1004,15 +1400,18 @@ class MoodfulAnalytics:
                     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 }}
                 .stats-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 20px;
+                    margin-bottom: 20px;
                 }}
                 .stats-card {{
                     background: #fff;
                     border-radius: 8px;
                     padding: 20px;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    flex: 1;
+                    min-width: 300px;
                 }}
                 .stats-card h4 {{
                     color: #667eea;
@@ -1057,22 +1456,22 @@ class MoodfulAnalytics:
                 <div class="content">
                     <!-- Key Performance Indicators -->
                     <div class="section">
-                        <div class="kpi-grid">
-                            <div class="kpi-card">
-                                <div class="kpi-value">{total_users:,}</div>
-                                <div class="kpi-label">Total Verified Users</div>
+                        <div class="kpi-grid" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 40px; justify-content: space-between;">
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{total_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Verified Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{past_week_users:,}</div>
-                                <div class="kpi-label">Weekly Active Users</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{past_week_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Weekly Active Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{past_month_users:,}</div>
-                                <div class="kpi-label">Monthly Active Users</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{past_month_users:,}</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Monthly Active Users</div>
                             </div>
-                            <div class="kpi-card">
-                                <div class="kpi-value">{week_engagement:.1f}%</div>
-                                <div class="kpi-label">Weekly Engagement Rate</div>
+                            <div class="kpi-card" style="background: #fff; border-radius: 10px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 4px solid #667eea; flex: 1; min-width: 200px; max-width: 280px;">
+                                <div class="kpi-value" style="font-size: 2.5em; font-weight: bold; color: #667eea; margin: 0;">{week_engagement:.1f}%</div>
+                                <div class="kpi-label" style="color: #6c757d; font-size: 0.9em; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px;">Weekly Engagement Rate</div>
                             </div>
                         </div>
                     </div>
@@ -1082,106 +1481,221 @@ class MoodfulAnalytics:
         if user_metrics.get('charts', {}).get('user_distribution'):
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">👥 User Distribution</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Account Levels</h4>
-                                <div class="stat-item">
-                                    <span>Basic Users</span>
-                                    <span>{user_metrics['user_counts']['basic']:,}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Pro Users</span>
-                                    <span>{user_metrics['user_counts']['pro']:,}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Enterprise Users</span>
-                                    <span>{user_metrics['user_counts']['enterprise']:,}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="chart-container">
-                            <img src="cid:user_distribution" alt="User Distribution Chart">
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">👥 User Distribution</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Account Levels</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Basic Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{user_metrics['user_counts']['basic']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Pro Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{user_metrics['user_counts']['pro']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Enterprise Users</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold;">{user_metrics['user_counts']['enterprise']:,}</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td width="50%"></td>
+                            </tr>
+                        </table>
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:user_distribution" alt="User Distribution Chart" style="max-width: 100%; height: auto;">
                         </div>
                     </div>
             """
         
-        # Add other sections with CID references...
+        # Add Engagement Metrics section
         if not engagement_metrics.get('error'):
+            current_week_platforms = engagement_metrics.get('current_week_platforms', {})
+            previous_week_platforms = engagement_metrics.get('previous_week_platforms', {})
+            all_time_platforms = engagement_metrics.get('all_time_platforms', {})
+            platform_changes = engagement_metrics.get('platform_changes', {})
+            date_ranges = engagement_metrics.get('date_ranges', {})
+            
+            def format_platform_change(change_data):
+                """Format platform change with color coding"""
+                absolute = change_data['absolute']
+                percentage = change_data['percentage']
+                
+                # Determine color based on change direction
+                if absolute > 0:
+                    color = "#28a745"  # Green for positive
+                    symbol = "+"
+                elif absolute < 0:
+                    color = "#dc3545"  # Red for negative  
+                    symbol = ""
+                else:
+                    color = "#6c757d"  # Gray for no change
+                    symbol = ""
+                
+                return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute} ({symbol}{percentage:.1f}%)</span>'
+            
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">📈 Engagement Metrics</h2>
-                        <div class="stats-grid">
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">📈 Engagement Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="100%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="10" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; font-weight: bold; width: 25%;">Platform</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Current Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges.get('current_week', '')})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Previous Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges.get('previous_week', '')})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Change</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 15%;">All Time</td>
+                                        </tr>
             """
             
-            # Platform statistics
-            if engagement_metrics.get('platform_stats'):
-                html_content += """
-                            <div class="stats-card">
-                                <h4>Platform Usage</h4>
-                """
-                for platform, stats in engagement_metrics['platform_stats'].items():
-                    html_content += f"""
-                                <div class="stat-item">
-                                    <span>{platform.title()}</span>
-                                    <span>{stats['submission_count']:,} submissions</span>
-                                </div>
-                    """
-                html_content += "</div>"
+            # Get all platforms and sort by all-time submission count
+            all_platforms = set()
+            all_platforms.update(current_week_platforms.keys())
+            all_platforms.update(previous_week_platforms.keys())
+            all_platforms.update(all_time_platforms.keys())
             
-            html_content += "</div>"
+            # Sort platforms by all-time submission count (descending)
+            sorted_platforms = sorted(all_platforms, 
+                                    key=lambda x: all_time_platforms.get(x, {}).get('submission_count', 0), 
+                                    reverse=True)
+            
+            # Add rows for each platform
+            for i, platform in enumerate(sorted_platforms):
+                current_count = current_week_platforms.get(platform, {}).get('submission_count', 0)
+                previous_count = previous_week_platforms.get(platform, {}).get('submission_count', 0)
+                all_time_count = all_time_platforms.get(platform, {}).get('submission_count', 0)
+                change = platform_changes.get(platform, {'absolute': 0, 'percentage': 0})
+                
+                # Skip platforms with no all-time data
+                if all_time_count == 0:
+                    continue
+                
+                border_style = "border-bottom: 1px solid #eee;" if i < len(sorted_platforms) - 1 else ""
+                
+                html_content += f"""
+                                        <tr>
+                                            <td style="padding: 12px 15px; {border_style}">{platform.title()}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold;">{current_count:,}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold;">{previous_count:,}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center;">{format_platform_change(change)}</td>
+                                            <td style="padding: 12px 15px; {border_style} text-align: center; font-weight: bold; color: #2ecc71;">{all_time_count:,}</td>
+                                        </tr>
+                """
+            
+            html_content += """
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+            """
             
             # Add platform usage chart
             if engagement_metrics.get('charts', {}).get('platform_usage'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:platform_usage" alt="Platform Usage Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:platform_usage" alt="Platform Usage Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
             # Add daily activity chart
             if engagement_metrics.get('charts', {}).get('daily_activity'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:daily_activity" alt="Daily Activity Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:daily_activity" alt="Daily Activity Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
             html_content += "</div>"
         
         # Add Content Quality section
-        if not content_metrics.get('error') and content_metrics.get('quality_stats'):
-            quality_stats = content_metrics['quality_stats']
+        if not content_metrics.get('error') and content_metrics.get('current_week_stats'):
+            current_week_stats = content_metrics['current_week_stats']
+            previous_week_stats = content_metrics['previous_week_stats']
+            all_time_stats = content_metrics['all_time_stats']
+            changes = content_metrics['changes']
+            date_ranges = content_metrics['date_ranges']
+            
+            def format_change(change_data, is_percentage=False):
+                """Format change with color coding"""
+                absolute = change_data['absolute']
+                percentage = change_data['percentage']
+                
+                # Determine color based on change direction
+                if absolute > 0:
+                    color = "#28a745"  # Green for positive
+                    symbol = "+"
+                elif absolute < 0:
+                    color = "#dc3545"  # Red for negative  
+                    symbol = ""
+                else:
+                    color = "#6c757d"  # Gray for no change
+                    symbol = ""
+                
+                if is_percentage:
+                    return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute:.1f}pp ({symbol}{percentage:.1f}%)</span>'
+                else:
+                    return f'<span style="color: {color}; font-weight: bold;">{symbol}{absolute} ({symbol}{percentage:.1f}%)</span>'
+            
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">✍️ Content Quality Metrics</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Content Engagement</h4>
-                                <div class="stat-item">
-                                    <span>Average Comment Length</span>
-                                    <span>{quality_stats['avg_comment_length']} characters</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Average Tags per Submission</span>
-                                    <span>{quality_stats['avg_total_tags']}</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Comment Usage Rate</span>
-                                    <span>{quality_stats['comment_rate_percentage']}%</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Custom Tag Usage Rate</span>
-                                    <span>{quality_stats['custom_tag_usage_rate_percentage']}%</span>
-                                </div>
-                            </div>
-                        </div>
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">✍️ Content Quality Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="100%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="10" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; font-weight: bold; width: 25%;">Metric</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Current Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges['current_week']})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Previous Week<br><small style="font-weight: normal; color: #6c757d;">({date_ranges['previous_week']})</small></td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 20%;">Change</td>
+                                            <td style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px; text-align: center; font-weight: bold; width: 15%;">All Time</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Average Comment Length</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['avg_comment_length']} chars</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['avg_comment_length']} chars</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['avg_comment_length'])}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['avg_comment_length']} chars</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Comment Usage Rate</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['comment_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['comment_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['comment_rate_percentage'], is_percentage=True)}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['comment_rate_percentage']}%</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee;">Average Tags per Submission</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{current_week_stats['avg_total_tags']}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold;">{previous_week_stats['avg_total_tags']}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center;">{format_change(changes['avg_total_tags'])}</td>
+                                            <td style="padding: 12px 15px; border-bottom: 1px solid #eee; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['avg_total_tags']}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px 15px;">Custom Tag Usage Rate</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold;">{current_week_stats['custom_tag_usage_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold;">{previous_week_stats['custom_tag_usage_rate_percentage']}%</td>
+                                            <td style="padding: 12px 15px; text-align: center;">{format_change(changes['custom_tag_usage_rate_percentage'], is_percentage=True)}</td>
+                                            <td style="padding: 12px 15px; text-align: center; font-weight: bold; color: #2ecc71;">{all_time_stats['custom_tag_usage_rate_percentage']}%</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
             """
             
             if content_metrics.get('charts', {}).get('content_quality'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:content_quality" alt="Content Quality Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:content_quality" alt="Content Quality Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
@@ -1191,38 +1705,105 @@ class MoodfulAnalytics:
         if not retention_metrics.get('error'):
             html_content += f"""
                     <div class="section">
-                        <h2 class="section-title">🔄 User Retention Analysis</h2>
-                        <div class="stats-grid">
-                            <div class="stats-card">
-                                <h4>Retention Breakdown</h4>
-                                <div class="stat-item">
-                                    <span>Active (Last 7 Days)</span>
-                                    <span class="positive">{retention_metrics['retention_buckets']['active_last_7_days']:,} ({retention_metrics['retention_percentages']['active_last_7_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Active (Last 30 Days)</span>
-                                    <span class="positive">{retention_metrics['retention_buckets']['active_last_30_days']:,} ({retention_metrics['retention_percentages']['active_last_30_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Dormant (30-90 Days)</span>
-                                    <span class="neutral">{retention_metrics['retention_buckets']['dormant_30_90_days']:,} ({retention_metrics['retention_percentages']['dormant_30_90_days_percentage']}%)</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span>Churned (90+ Days)</span>
-                                    <span class="negative">{retention_metrics['retention_buckets']['churned_90_plus_days']:,} ({retention_metrics['retention_percentages']['churned_90_plus_days_percentage']}%)</span>
-                                </div>
-                            </div>
-                        </div>
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">🔄 User Retention Analysis</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Retention Breakdown</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Active (Last 7 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #28a745;">{retention_metrics['retention_buckets']['active_last_7_days']:,} ({retention_metrics['retention_percentages']['active_last_7_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Active (Last 30 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #28a745;">{retention_metrics['retention_buckets']['active_last_30_days']:,} ({retention_metrics['retention_percentages']['active_last_30_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Dormant (30-90 Days)</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #6c757d;">{retention_metrics['retention_buckets']['dormant_30_90_days']:,} ({retention_metrics['retention_percentages']['dormant_30_90_days_percentage']}%)</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Churned (90+ Days)</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold; color: #dc3545;">{retention_metrics['retention_buckets']['churned_90_plus_days']:,} ({retention_metrics['retention_percentages']['churned_90_plus_days_percentage']}%)</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                                <td width="50%"></td>
+                            </tr>
+                        </table>
             """
             
             if retention_metrics.get('charts', {}).get('retention_status'):
                 html_content += f"""
-                        <div class="chart-container">
-                            <img src="cid:retention_status" alt="Retention Status Chart">
+                        <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa;">
+                            <img src="cid:retention_status" alt="Retention Status Chart" style="max-width: 100%; height: auto;">
                         </div>
                 """
             
             html_content += "</div>"
+        
+        # Add Business Metrics section
+        if not business_metrics.get('error'):
+            html_content += f"""
+                    <div class="section">
+                        <h2 style="font-size: 1.8em; color: #2c3e50; margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">💼 Business Metrics</h2>
+                        <table width="100%" cellpadding="0" cellspacing="20" style="margin-bottom: 20px;">
+                            <tr>
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Key Business Indicators</h4>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee;">Monthly Active Users</td>
+                                            <td style="padding: 10px 15px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">{business_metrics['monthly_active_users']:,}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 10px 15px;">Average Daily Active Users</td>
+                                            <td style="padding: 10px 15px; text-align: right; font-weight: bold;">{business_metrics['avg_daily_active_users']}</td>
+                                        </tr>
+                                    </table>
+                                </td>
+            """
+            
+            if business_metrics.get('active_users_by_account_level'):
+                html_content += """
+                                <td width="50%" style="vertical-align: top;">
+                                    <table width="100%" cellpadding="15" cellspacing="0" style="background: #fff; border: 1px solid #ddd;">
+                                        <tr>
+                                            <td colspan="2" style="background: #f8f9fa; border-bottom: 1px solid #ddd; padding: 15px;">
+                                                <h4 style="color: #667eea; margin: 0; font-size: 1.1em;">Active Users by Account Level</h4>
+                                            </td>
+                                        </tr>
+                """
+                level_list = list(business_metrics['active_users_by_account_level'].items())
+                for i, (level, count) in enumerate(level_list):
+                    border_style = "border-bottom: 1px solid #eee;" if i < len(level_list) - 1 else ""
+                    html_content += f"""
+                                        <tr>
+                                            <td style="padding: 10px 15px; {border_style}">{level.title()}</td>
+                                            <td style="padding: 10px 15px; {border_style} text-align: right; font-weight: bold;">{count:,} users</td>
+                                        </tr>
+                    """
+                html_content += """
+                                    </table>
+                                </td>
+                """
+            else:
+                html_content += '<td width="50%"></td>'
+            
+            html_content += """
+                            </tr>
+                        </table>
+                    </div>
+            """
         
         # Footer
         html_content += f"""

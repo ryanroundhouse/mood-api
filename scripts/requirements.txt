@@ -4,3 +4,6 @@ nltk
 openai
 pytz
 pycryptodome
+plotly
+pandas
+kaleido

@@ -538,10 +538,10 @@ def get_openai_insights(moods):
     # Example Output:
 
     {{
-        "Answer1": "You tend to rate your mood higher on days with social activities like 'connected' (e.g., May 1, 17, 19, 28). Negative work events sometimes coincide with lower mood ratings.",
-        "Answer2": "This month, mood ratings remained stable (mostly 3s), with occasional 4s on weekends. 'Worked out' is the most common positive activity. Mood dips slightly after stressful work discussions.",
-        "Answer3": "On May 28, you went out for drinks with a friend and played hockey well—great job maintaining social connections and active hobbies! Celebrate this momentum.",
-        "Answer4": "If you continue your workout and social habits, expect more positive days next week, especially after team activities."
+        "Answer1": "Your mood ratings show a clear positive correlation with activities labeled as “connected” and “active.” For example, on May 19, your mood reached a 4 after a day full of productive tasks for KT’s birthday and a good workout. In contrast, on days like May 15, when work was stressful and there was less social interaction, your mood was lower. Social engagement and physical activity appear crucial for boosting your mood.",
+        "Answer2": "Looking at your entries for May, your mood generally stayed steady around a rating of 3, with higher peaks at 4 on days marked by active participation and strong social connections, such as May 19 and May 28. Regular exercise, whether in the form of sports or workouts, reliably boosts your mood. However, periods of work-related stress or lack of meaningful interaction tend to prevent your mood from rising higher.",
+        "Answer3": "A small win from the past week was on May 28, when you went out for drinks with Craig and played hockey with noticeable enthusiasm, earning a mood rating of 4. This is a great example of how combining social activities and sports can significantly lift your mood. Take a moment to celebrate this win—maintaining these habits is not only enjoyable but also valuable for your emotional well-being.",
+        "Answer4": "Based on your recent habits, you can look forward to more positive moods in the coming week, especially if you continue prioritizing workouts and time spent with friends or family. Participating in hockey, staying active, and keeping up with social plans are likely to lead to more days rated at 4. Stay consistent with these routines and expect a strong, upbeat mood trend to continue."
     }}
     """
 

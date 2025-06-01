@@ -600,6 +600,20 @@
           </label>
           <span class="switch-label">Receive weekly mood summaries</span>
         </div>
+        <div class="form-group">
+          <label class="switch">
+            <input
+              type="checkbox"
+              id="aiInsights"
+              name="aiInsights"
+            />
+            <span class="slider"></span>
+          </label>
+          <span class="switch-label">Enable enhanced AI insights</span>
+          <div style="margin-top: 8px; padding-left: 70px; font-size: 14px; color: #666; line-height: 1.4;">
+            When enabled, your mood data is securely shared with our AI system for advanced pattern analysis and personalized insights. You can disable this at any time.
+          </div>
+        </div>
         <!-- Save button removed -->
       </form>
       <div id="exportContainer" style="display: none; margin-top: 20px">
@@ -1055,6 +1069,7 @@
             settings.emailDailyNotifications;
           document.getElementById('emailWeeklySummary').checked =
             settings.emailWeeklySummary;
+          document.getElementById('aiInsights').checked = settings.aiInsights;
 
           // Add event listeners for the toggles
           document
@@ -1062,6 +1077,9 @@
             .addEventListener('change', updateSetting);
           document
             .getElementById('emailWeeklySummary')
+            .addEventListener('change', updateSetting);
+          document
+            .getElementById('aiInsights')
             .addEventListener('change', updateSetting);
 
           // Store user details for later use
@@ -1111,8 +1129,17 @@
           await authenticatedApiCall('/api/user/settings', 'PUT', {
             [setting]: value,
           });
-          console.log(`${setting} updated successfully!`);
-          showAlertBanner(`${setting} updated successfully!`);
+          
+          // Provide specific feedback for AI insights
+          if (setting === 'aiInsights') {
+            const message = value 
+              ? 'AI insights enabled! You\'ll now receive enhanced personalized analysis in your summaries.'
+              : 'AI insights disabled. Your mood data will no longer be shared with our AI system.';
+            showAlertBanner(message);
+          } else {
+            console.log(`${setting} updated successfully!`);
+            showAlertBanner(`${setting} updated successfully!`);
+          }
         } catch (error) {
           console.error('Error:', error);
           showAlertBanner(

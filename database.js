@@ -102,6 +102,7 @@ function initializeDatabase() {
         appWeeklySummary INTEGER DEFAULT 1,
         moodEmojis TEXT,
         unsubscribeToken TEXT,
+        ai_insights INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);
@@ -113,24 +114,58 @@ function initializeDatabase() {
         return;
       }
       
-      // Check if the column exists in the returned array
+      // Check if the columns exist in the returned array
       let hasUnsubscribeToken = false;
+      let hasAiInsights = false;
       if (Array.isArray(columns)) {
         for (const col of columns) {
           if (col.name === 'unsubscribeToken') {
             hasUnsubscribeToken = true;
-            break;
+          }
+          if (col.name === 'ai_insights') {
+            hasAiInsights = true;
           }
         }
       }
       
-      // If the column doesn't exist, add it
+      // If the unsubscribeToken column doesn't exist, add it
       if (!hasUnsubscribeToken) {
         db.run("ALTER TABLE user_settings ADD COLUMN unsubscribeToken TEXT", (alterErr) => {
           if (alterErr) {
             logger.error('Failed to add unsubscribeToken column:', alterErr);
           } else {
             logger.info('unsubscribeToken column added to user_settings table');
+          }
+        });
+      }
+
+      // If the ai_insights column doesn't exist, add it
+      if (!hasAiInsights) {
+        db.run("ALTER TABLE user_settings ADD COLUMN ai_insights INTEGER NOT NULL DEFAULT 0", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add ai_insights column:', alterErr);
+          } else {
+            logger.info('ai_insights column added to user_settings table');
+            
+            // Update existing Pro and Enterprise users to have AI insights enabled
+            db.run(`
+              UPDATE user_settings 
+              SET ai_insights = 1 
+              WHERE userId IN (
+                SELECT id FROM users 
+                WHERE accountLevel IN ('pro', 'enterprise') AND isVerified = 1
+              )
+            `, (updateErr) => {
+              if (updateErr) {
+                logger.error('Failed to enable ai_insights for existing Pro/Enterprise users:', updateErr);
+              } else {
+                db.get("SELECT COUNT(*) as count FROM user_settings WHERE ai_insights = 1", (countErr, row) => {
+                  if (!countErr && row) {
+                    logger.info(`ai_insights enabled for ${row.count} existing Pro/Enterprise users`);
+                  }
+                });
+              }
+            });
           }
         });
       }

@@ -15,7 +15,8 @@ router.get('/settings', authenticateToken, (req, res) => {
     `SELECT users.name, users.email, users.accountLevel, 
      user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
      user_settings.appDailyNotifications, user_settings.appWeeklySummary,
-     user_settings.appDailyNotificationTime, user_settings.moodEmojis
+     user_settings.appDailyNotificationTime, user_settings.moodEmojis,
+     user_settings.ai_insights
      FROM users 
      LEFT JOIN user_settings ON users.id = user_settings.userId 
      WHERE users.id = ?`,
@@ -40,6 +41,7 @@ router.get('/settings', authenticateToken, (req, res) => {
         appWeeklySummary: row.appWeeklySummary === 1,
         appDailyNotificationTime: row.appDailyNotificationTime || '20:00',
         moodEmojis: row.moodEmojis ? JSON.parse(row.moodEmojis) : null,
+        aiInsights: row.ai_insights === 1,
       };
 
       res.json(userSettings);
@@ -61,6 +63,7 @@ router.put(
       .optional()
       .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/), // HH:mm format
     body('moodEmojis').optional().isArray(),
+    body('aiInsights').optional().isBoolean(),
   ],
   (req, res) => {
     const errors = validationResult(req);
@@ -77,6 +80,7 @@ router.put(
       appWeeklySummary,
       appDailyNotificationTime,
       moodEmojis,
+      aiInsights,
     } = req.body;
 
     db.serialize(() => {
@@ -134,6 +138,11 @@ router.put(
           updates.push('moodEmojis = ?');
           values.push(JSON.stringify(moodEmojis));
         }
+      }
+
+      if (aiInsights !== undefined) {
+        updates.push('ai_insights = ?');
+        values.push(aiInsights ? 1 : 0);
       }
 
       if (updates.length > 0) {

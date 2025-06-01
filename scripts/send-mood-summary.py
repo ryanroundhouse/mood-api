@@ -58,7 +58,7 @@ def get_users():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT users.id, users.email, users.accountLevel, user_settings.emailWeeklySummary
+        SELECT users.id, users.email, user_settings.emailWeeklySummary, user_settings.ai_insights
         FROM users 
         JOIN user_settings ON users.id = user_settings.userId 
         WHERE users.isVerified = 1
@@ -96,12 +96,9 @@ def decrypt(encrypted_data):
         print(f"Error decrypting data: {e}")
         return None
 
-def get_user_moods(user_id, year, month):
+def get_user_moods(user_id, start_date, end_date):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    start_date = datetime(year, month, 1)
-    end_date = start_date + timedelta(days=32)
-    end_date = end_date.replace(day=1)
 
     cursor.execute("""
         SELECT datetime, rating, comment, activities
@@ -114,10 +111,10 @@ def get_user_moods(user_id, year, month):
         # Strip off timezone information
         dt_str = re.sub(r'(Z|[+-]\d{2}:\d{2})$', '', row[0])
         dt = datetime.fromisoformat(dt_str)
-        day = dt.strftime('%d')
+        day_key = dt.strftime('%Y-%m-%d')  # Use full date as key instead of just day
         # Decrypt the comment
         decrypted_comment = decrypt(row[2]) if row[2] else None
-        moods[day] = {
+        moods[day_key] = {
             'date': dt.strftime('%Y-%m-%d'),
             'rating': row[1], 
             'comment': decrypted_comment, 
@@ -127,43 +124,131 @@ def get_user_moods(user_id, year, month):
     conn.close()
     return moods
 
-def generate_calendar_html(year, month, moods):
-    calendar.setfirstweekday(calendar.SUNDAY)  # Set the first day of the week to Sunday
-    cal = calendar.monthcalendar(year, month)
-    month_name = calendar.month_name[month]
-    
+def generate_calendar_html(start_date, end_date, moods):
+    # Generate a calendar view for the last 30 days
     html = f"""
-    <h2>{month_name} {year}</h2>
-    <table style="border-collapse: collapse; width: 100%;">
+    <h2>Last 30 Days ({start_date.strftime('%B %d, %Y')} - {end_date.strftime('%B %d, %Y')})</h2>
+    <table style="border-collapse: collapse; width: 100%; margin: 20px 0;">
         <tr>
-            <th style="border: 1px solid #ddd; padding: 8px;">Sun</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Mon</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Tue</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Wed</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Thu</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Fri</th>
-            <th style="border: 1px solid #ddd; padding: 8px;">Sat</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Sun</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Mon</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Tue</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Wed</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Thu</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Fri</th>
+            <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Sat</th>
         </tr>
     """
     
     mood_colors = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff']
+    mood_labels = ['Very Sad', 'Sad', 'Neutral', 'Happy', 'Very Happy']
     
-    for week in cal:
+    # Find the start of the week for our start_date
+    days_since_sunday = start_date.weekday() + 1 if start_date.weekday() != 6 else 0
+    calendar_start = start_date - timedelta(days=days_since_sunday)
+    
+    # Find the end of the week for our end_date
+    days_to_saturday = 6 - end_date.weekday() if end_date.weekday() != 6 else 0
+    calendar_end = end_date + timedelta(days=days_to_saturday)
+    
+    # Pre-calculate all dates to analyze month boundaries
+    all_dates = []
+    current_date = calendar_start
+    while current_date <= calendar_end:
+        all_dates.append(current_date)
+        current_date += timedelta(days=1)
+    
+    # Group dates into weeks
+    weeks = []
+    for i in range(0, len(all_dates), 7):
+        weeks.append(all_dates[i:i+7])
+    
+    for week_index, week in enumerate(weeks):
         html += "<tr>"
-        for day in week:
-            if day == 0:
-                html += '<td style="border: 1px solid #ddd; padding: 8px;"></td>'
-            else:
-                mood = moods.get(f"{day:02d}")
+        
+        for day_index, current_date in enumerate(week):
+            date_key = current_date.strftime('%Y-%m-%d')
+            is_in_range = start_date <= current_date <= end_date
+            
+            # Check for month boundaries
+            is_first_day_of_month = current_date.day == 1
+            
+            # Check if this week contains the first or last day of a month within our range
+            current_month = current_date.month
+            prev_date = current_date - timedelta(days=1) 
+            next_date = current_date + timedelta(days=1)
+            
+            # Determine if we need month boundary borders
+            borders = []
+            
+            # Left border: first day of month (except if it's Sunday)
+            if is_first_day_of_month and day_index > 0:
+                borders.append("border-left: 4px solid #333")
+            
+            # Top border: if this is the first week containing this month
+            first_day_of_month = current_date.replace(day=1)
+            if first_day_of_month >= calendar_start:
+                # Find which week contains the first day of this month
+                for check_week_idx, check_week in enumerate(weeks):
+                    if first_day_of_month in check_week:
+                        if week_index == check_week_idx and current_date.month == current_month:
+                            borders.append("border-top: 4px solid #333")
+                        break
+            
+            # Bottom border: if this is the last week containing this month
+            last_day_of_month = (current_date.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+            if last_day_of_month <= calendar_end:
+                # Find which week contains the last day of this month
+                for check_week_idx, check_week in enumerate(weeks):
+                    if last_day_of_month in check_week:
+                        if week_index == check_week_idx and current_date.month == current_month:
+                            borders.append("border-bottom: 4px solid #333")
+                        break
+            
+            border_style = "; ".join(borders)
+            if border_style:
+                border_style = border_style + ";"
+            
+            if is_in_range:
+                mood = moods.get(date_key)
+                
                 if mood:
                     bg_color = mood_colors[mood['rating']]
-                    activities = ", ".join(mood['activities']) if mood['activities'] else 'No activities'
-                    title = f"Mood: {mood['rating']}, Comment: {mood['comment'] or 'No comment'}, Activities: {activities}"
+                    mood_label = mood_labels[mood['rating']]
+                    activities = ", ".join(mood['activities'][:2]) if mood['activities'] else ''
+                    if len(mood['activities']) > 2:
+                        activities += f" +{len(mood['activities']) - 2} more"
+                    
+                    # Handle comment with book emoji and tooltip
+                    comment_display = ""
+                    if mood['comment']:
+                        # Escape quotes for HTML attribute
+                        escaped_comment = mood['comment'].replace('"', '&quot;').replace("'", '&#39;')
+                        comment_display = f' <span title="{escaped_comment}" style="cursor: help;">📖</span>'
+                    
+                    cell_content = f"""
+                    <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{comment_display}</div>
+                    <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">{mood_label}</div>
+                    {f'<div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{activities}</div>' if activities else ''}
+                    """
                 else:
-                    bg_color = 'white'
-                    title = ''
-                
-                html += f'<td style="border: 1px solid #ddd; padding: 8px; background-color: {bg_color};" title="{title}">{day}</td>'
+                    bg_color = '#f9f9f9'
+                    cell_content = f"""
+                    <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}</div>
+                    <div style="font-size: 0.8em; color: #999;">No entry</div>
+                    """
+            else:
+                # Outside our date range - show as disabled
+                bg_color = '#f0f0f0'
+                cell_content = f'<div style="color: #ccc;">{current_date.day}</div>'
+            
+            html += f'''
+            <td style="border: 1px solid #ddd; padding: 6px; background-color: {bg_color}; 
+                       vertical-align: top; height: 80px; width: 14.28%; {border_style}">
+                {cell_content}
+            </td>
+            '''
+        
         html += "</tr>"
     
     html += "</table>"
@@ -172,20 +257,24 @@ def generate_calendar_html(year, month, moods):
     html += """
     <div style="margin-top: 20px;">
         <h3>Mood Legend</h3>
-        <div style="display: flex; justify-content: space-between;">
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffb3ba; margin-right: 5px;"></span>Very Sad</div>
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffdfba; margin-right: 5px;"></span>Sad</div>
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffffba; margin-right: 5px;"></span>Neutral</div>
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #baffc9; margin-right: 5px;"></span>Happy</div>
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #bae1ff; margin-right: 5px;"></span>Very Happy</div>
+        <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffb3ba; margin-right: 5px; border: 1px solid #ddd;"></span>Very Sad (0)</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffdfba; margin-right: 5px; border: 1px solid #ddd;"></span>Sad (1)</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffffba; margin-right: 5px; border: 1px solid #ddd;"></span>Neutral (2)</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #baffc9; margin-right: 5px; border: 1px solid #ddd;"></span>Happy (3)</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #bae1ff; margin-right: 5px; border: 1px solid #ddd;"></span>Very Happy (4)</div>
+            <div><span style="margin-left: 10px;">📖 = Has comment (hover for details)</span></div>
         </div>
+        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+            <strong>Note:</strong> Thick borders indicate month boundaries. Grayed out days are outside the 30-day period.
+        </p>
     </div>
     """
     
     return html
 
 def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date, end_date, user_id):
-    subject = "Moodful - Your Weekly Mood Summary"
+    subject = "Moodful - Your Last 30 Days Mood Summary"
     
     # Get or create unsubscribe token for this user
     unsubscribe_token = get_or_create_unsubscribe_token(user_id)
@@ -205,16 +294,12 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Monthly Mood Calendar - Moodful</title>
+        <title>Last 30 Days Mood Summary - Moodful</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #6a89cc;">Basic Analytics</h2>
-        {email_body}
-        <h2 style="color: #6a89cc;">Your Monthly Mood Calendar</h2>
-        <p>Here's a summary of your mood entries for this month:</p>
-        {calendar_html}
     """
 
+    # Add AI insights first if available
     if openai_insights:
         html_content += f"""
         <h2 style="color: #6a89cc;">AI-Generated Insights</h2>
@@ -225,12 +310,21 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date
             <p>{insight['description']}</p>
             """
 
+    # Then add Basic Analytics
     html_content += f"""
-        <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work and have a wonderful week ahead!</p>
+        <h2 style="color: #6a89cc;">Basic Analytics</h2>
+        {email_body}
+        <h2 style="color: #6a89cc;">Your Last 30 Days Overview</h2>
+        <p>Here's a summary of your mood entries for the last 30 days:</p>
+        {calendar_html}
+    """
+
+    html_content += f"""
+        <p>Remember, focusing on the positive aspects of your day can help maintain and even improve your mood. Keep up the great work tracking your mood!</p>
         <p>Best regards,
         <br/>Your Moodful</p>
         <div style="margin-top: 30px; font-size: 0.9em; color: #888; border-top: 1px solid #ddd; padding-top: 15px;">
-            <p>If you no longer wish to receive weekly summary emails, you can <a href="{unsubscribe_link}">unsubscribe from weekly summaries</a>.</p>
+            <p>If you no longer wish to receive summary emails, you can <a href="{unsubscribe_link}">unsubscribe from summary emails</a>.</p>
             <p>Or if you wish to unsubscribe from all emails, you can <a href="{unsubscribe_all_link}">unsubscribe from all Moodful emails</a>.</p>
         </div>
     </body>
@@ -264,9 +358,6 @@ def get_stress_words():
     return stress_words
 
 def generate_mood_summary(user_id, start_date, end_date):
-    # Database configuration
-    DB_PATH = "../database.sqlite"
-
     # Connect to the database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -538,7 +629,7 @@ def get_openai_insights(moods):
     # Example Output:
 
     {{
-        "Answer1": "Your mood ratings show a clear positive correlation with activities labeled as “connected” and “active.” For example, on May 19, your mood reached a 4 after a day full of productive tasks for KT’s birthday and a good workout. In contrast, on days like May 15, when work was stressful and there was less social interaction, your mood was lower. Social engagement and physical activity appear crucial for boosting your mood.",
+        "Answer1": "Your mood ratings show a clear positive correlation with activities labeled as "connected" and "active." For example, on May 19, your mood reached a 4 after a day full of productive tasks for KT's birthday and a good workout. In contrast, on days like May 15, when work was stressful and there was less social interaction, your mood was lower. Social engagement and physical activity appear crucial for boosting your mood.",
         "Answer2": "Looking at your entries for May, your mood generally stayed steady around a rating of 3, with higher peaks at 4 on days marked by active participation and strong social connections, such as May 19 and May 28. Regular exercise, whether in the form of sports or workouts, reliably boosts your mood. However, periods of work-related stress or lack of meaningful interaction tend to prevent your mood from rising higher.",
         "Answer3": "A small win from the past week was on May 28, when you went out for drinks with Craig and played hockey with noticeable enthusiasm, earning a mood rating of 4. This is a great example of how combining social activities and sports can significantly lift your mood. Take a moment to celebrate this win—maintaining these habits is not only enjoyable but also valuable for your emotional well-being.",
         "Answer4": "Based on your recent habits, you can look forward to more positive moods in the coming week, especially if you continue prioritizing workouts and time spent with friends or family. Participating in hockey, staying active, and keeping up with social plans are likely to lead to more days rated at 4. Stay consistent with these routines and expect a strong, upbeat mood trend to continue."
@@ -546,9 +637,6 @@ def get_openai_insights(moods):
     """
 
     prompt = prompt.format(moods=json.dumps(moods, indent=2), current_date=current_date)
-    
-    print("Sending prompt to OpenAI:")
-    print(prompt)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -568,9 +656,6 @@ def get_openai_insights(moods):
 
     try:
         content = json.loads(raw_content)
-
-        print("OpenAI Response:")
-        print(content)
         
     except Exception:
         return [{"name": "AI Insights Error", "description": "Could not parse OpenAI response."}]
@@ -602,26 +687,27 @@ def encrypt(text):
 
 def main():
     users = get_users()
-    current_date = datetime.now()
-    year, month = current_date.year, current_date.month
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
     
-    for user_id, email, account_level, email_weekly_summary in users:
-        moods = get_user_moods(user_id, year, month)
+    for user_id, email, email_weekly_summary, ai_insights_enabled in users:
+        moods = get_user_moods(user_id, start_date, end_date)
         
         # Skip users with no mood data
         if not moods:
             print(f"Skipping user {user_id} - no mood data found")
             continue
             
-        calendar_html = generate_calendar_html(year, month, moods)
+        calendar_html = generate_calendar_html(start_date, end_date, moods)
         basic_stats = generate_mood_summary(user_id, start_date, end_date)
         
-        if account_level in ['pro', 'enterprise']:
+        # Use ai_insights setting instead of accountLevel
+        if ai_insights_enabled == 1:
             openai_insights = get_openai_insights(moods)
+            print(f"Generated AI insights for user {user_id} (ai_insights enabled)")
         else:
             openai_insights = None
+            print(f"Skipped AI insights for user {user_id} (ai_insights disabled)")
         
         # Store the summary data in the database
         conn = sqlite3.connect(DB_PATH)

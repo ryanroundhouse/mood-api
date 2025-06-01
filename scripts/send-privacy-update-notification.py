@@ -241,7 +241,7 @@ class PrivacyUpdateNotifier:
                     </div>
             """
         
-        html_content += """
+        html_content += f"""
                     <div class="data-info">
                         <h4>📱 Enhanced Data Collection</h4>
                         <p>To better understand how you interact with Moodful and improve our service, we now collect information about how you submit your mood entries (website, mobile app, or email).</p>

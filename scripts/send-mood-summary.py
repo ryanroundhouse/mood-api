@@ -121,6 +121,41 @@ def get_user_moods(user_id, start_date, end_date):
             'activities': json.loads(row[3]) if row[3] else []
         }
     
+    # Fetch sleep data for the same date range
+    cursor.execute("""
+        SELECT calendarDate, durationInHours, deepSleepDurationInHours, 
+               lightSleepDurationInHours, remSleepInHours, awakeDurationInHours,
+               startTimeInSeconds, startTimeOffsetInSeconds
+        FROM sleep_summaries
+        WHERE userId = ? AND calendarDate >= ? AND calendarDate <= ?
+    """, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+    
+    # Merge sleep data into mood entries
+    for sleep_row in cursor.fetchall():
+        calendar_date = sleep_row[0]  # calendarDate is already in YYYY-MM-DD format
+        sleep_data = {
+            'total_sleep_hours': sleep_row[1] if sleep_row[1] else 0,
+            'deep_sleep_hours': sleep_row[2] if sleep_row[2] else 0,
+            'light_sleep_hours': sleep_row[3] if sleep_row[3] else 0,
+            'rem_sleep_hours': sleep_row[4] if sleep_row[4] else 0,
+            'awake_hours': sleep_row[5] if sleep_row[5] else 0,
+            'start_time_seconds': sleep_row[6] if sleep_row[6] else None,
+            'start_time_offset_seconds': sleep_row[7] if sleep_row[7] else None
+        }
+        
+        # If mood entry exists for this date, add sleep data to it
+        if calendar_date in moods:
+            moods[calendar_date]['sleep_data'] = sleep_data
+        else:
+            # Create a mood entry with just sleep data (no mood rating)
+            moods[calendar_date] = {
+                'date': calendar_date,
+                'rating': None,
+                'comment': None,
+                'activities': [],
+                'sleep_data': sleep_data
+            }
+    
     conn.close()
     return moods
 
@@ -213,24 +248,42 @@ def generate_calendar_html(start_date, end_date, moods):
                 mood = moods.get(date_key)
                 
                 if mood:
-                    bg_color = mood_colors[mood['rating']]
-                    mood_label = mood_labels[mood['rating']]
-                    activities = ", ".join(mood['activities'][:2]) if mood['activities'] else ''
-                    if len(mood['activities']) > 2:
-                        activities += f" +{len(mood['activities']) - 2} more"
-                    
-                    # Handle comment with book emoji and tooltip
-                    comment_display = ""
-                    if mood['comment']:
-                        # Escape quotes for HTML attribute
-                        escaped_comment = mood['comment'].replace('"', '&quot;').replace("'", '&#39;')
-                        comment_display = f' <span title="{escaped_comment}" style="cursor: help;">📖</span>'
-                    
-                    cell_content = f"""
-                    <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{comment_display}</div>
-                    <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">{mood_label}</div>
-                    {f'<div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{activities}</div>' if activities else ''}
-                    """
+                    # Check if we have a mood rating or just sleep data
+                    if mood['rating'] is not None:
+                        bg_color = mood_colors[mood['rating']]
+                        mood_label = mood_labels[mood['rating']]
+                        activities = ", ".join(mood['activities'][:2]) if mood['activities'] else ''
+                        if len(mood['activities']) > 2:
+                            activities += f" +{len(mood['activities']) - 2} more"
+                        
+                        # Handle comment with book emoji and tooltip
+                        comment_display = ""
+                        if mood['comment']:
+                            # Escape quotes for HTML attribute
+                            escaped_comment = mood['comment'].replace('"', '&quot;').replace("'", '&#39;')
+                            comment_display = f' <span title="{escaped_comment}" style="cursor: help;">📖</span>'
+                        
+                        # Add sleep indicator if available
+                        sleep_indicator = ""
+                        if 'sleep_data' in mood:
+                            sleep_hours = mood['sleep_data'].get('total_sleep_hours', 0)
+                            sleep_indicator = f' <span title="{sleep_hours:.1f} hours of sleep" style="cursor: help;">😴</span>'
+                        
+                        cell_content = f"""
+                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{comment_display}{sleep_indicator}</div>
+                        <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">{mood_label}</div>
+                        {f'<div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{activities}</div>' if activities else ''}
+                        """
+                    else:
+                        # Only sleep data, no mood rating
+                        bg_color = '#e8f4fd'  # Light blue for sleep-only data
+                        sleep_hours = mood.get('sleep_data', {}).get('total_sleep_hours', 0)
+                        sleep_indicator = f' <span title="{sleep_hours:.1f} hours of sleep" style="cursor: help;">😴</span>'
+                        cell_content = f"""
+                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{sleep_indicator}</div>
+                        <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">Sleep only</div>
+                        <div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{sleep_hours:.1f}h sleep</div>
+                        """
                 else:
                     bg_color = '#f9f9f9'
                     cell_content = f"""
@@ -263,7 +316,9 @@ def generate_calendar_html(start_date, end_date, moods):
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffffba; margin-right: 5px; border: 1px solid #ddd;"></span>Neutral (2)</div>
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #baffc9; margin-right: 5px; border: 1px solid #ddd;"></span>Happy (3)</div>
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #bae1ff; margin-right: 5px; border: 1px solid #ddd;"></span>Very Happy (4)</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #e8f4fd; margin-right: 5px; border: 1px solid #ddd;"></span>Sleep data only</div>
             <div><span style="margin-left: 10px;">📖 = Has comment (hover for details)</span></div>
+            <div><span style="margin-left: 10px;">😴 = Sleep data available</span></div>
         </div>
         <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
             <strong>Note:</strong> Thick borders indicate month boundaries. Grayed out days are outside the 30-day period.
@@ -453,13 +508,149 @@ def generate_mood_summary(user_id, start_date, end_date):
             words = set(re.findall(r'\b\w+\b', comment))
             positive_word_count += len(words.intersection(positive_words))
 
-    # 7. Sleep and Mood Correlation
+    # 7. Sleep and Mood Correlation (Activity-based)
     sleep_related_entries = [entry for entry in data if 'good sleep' in entry['activities']]
     if sleep_related_entries:
         sleep_ratings = [entry['rating'] for entry in sleep_related_entries]
         avg_sleep_mood = sum(sleep_ratings) / len(sleep_ratings)
     else:
         avg_sleep_mood = None
+
+    # New Sleep Data Analysis (only if sleep data is available)
+    sleep_data_entries = []
+    for entry in data:
+        # Check if we have sleep data stored in the mood summary
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT calendarDate, durationInHours, deepSleepDurationInHours, 
+                   lightSleepDurationInHours, remSleepInHours, awakeDurationInHours,
+                   startTimeInSeconds, startTimeOffsetInSeconds
+            FROM sleep_summaries
+            WHERE userId = ? AND calendarDate = ?
+        """, (user_id, entry['datetime'].strftime('%Y-%m-%d')))
+        sleep_row = cursor.fetchone()
+        conn.close()
+        
+        if sleep_row:
+            sleep_entry = entry.copy()
+            sleep_entry['sleep_data'] = {
+                'total_sleep_hours': sleep_row[1] if sleep_row[1] else 0,
+                'deep_sleep_hours': sleep_row[2] if sleep_row[2] else 0,
+                'light_sleep_hours': sleep_row[3] if sleep_row[3] else 0,
+                'rem_sleep_hours': sleep_row[4] if sleep_row[4] else 0,
+                'awake_hours': sleep_row[5] if sleep_row[5] else 0,
+                'start_time_seconds': sleep_row[6] if sleep_row[6] else None,
+                'start_time_offset_seconds': sleep_row[7] if sleep_row[7] else None
+            }
+            sleep_data_entries.append(sleep_entry)
+
+    # Sleep Duration and Mood Correlation
+    sleep_duration_mood_correlation = None
+    avg_sleep_duration = None
+    if sleep_data_entries:
+        sleep_durations = [entry['sleep_data']['total_sleep_hours'] for entry in sleep_data_entries]
+        sleep_moods = [entry['rating'] for entry in sleep_data_entries]
+        avg_sleep_duration = sum(sleep_durations) / len(sleep_durations)
+        
+        # Calculate correlation coefficient
+        if len(sleep_durations) > 1:
+            mean_sleep = sum(sleep_durations) / len(sleep_durations)
+            mean_mood = sum(sleep_moods) / len(sleep_moods)
+            
+            numerator = sum((s - mean_sleep) * (m - mean_mood) for s, m in zip(sleep_durations, sleep_moods))
+            sleep_variance = sum((s - mean_sleep) ** 2 for s in sleep_durations)
+            mood_variance = sum((m - mean_mood) ** 2 for m in sleep_moods)
+            
+            if sleep_variance > 0 and mood_variance > 0:
+                sleep_duration_mood_correlation = numerator / (sleep_variance * mood_variance) ** 0.5
+
+    # Deep Sleep and Mood Analysis
+    deep_sleep_mood_correlation = None
+    avg_deep_sleep = None
+    if sleep_data_entries:
+        deep_sleep_hours = [entry['sleep_data']['deep_sleep_hours'] for entry in sleep_data_entries if entry['sleep_data']['deep_sleep_hours'] > 0]
+        if deep_sleep_hours:
+            avg_deep_sleep = sum(deep_sleep_hours) / len(deep_sleep_hours)
+            deep_sleep_moods = [entry['rating'] for entry in sleep_data_entries if entry['sleep_data']['deep_sleep_hours'] > 0]
+            
+            if len(deep_sleep_hours) > 1:
+                mean_deep = sum(deep_sleep_hours) / len(deep_sleep_hours)
+                mean_mood = sum(deep_sleep_moods) / len(deep_sleep_moods)
+                
+                numerator = sum((d - mean_deep) * (m - mean_mood) for d, m in zip(deep_sleep_hours, deep_sleep_moods))
+                deep_variance = sum((d - mean_deep) ** 2 for d in deep_sleep_hours)
+                mood_variance = sum((m - mean_mood) ** 2 for m in deep_sleep_moods)
+                
+                if deep_variance > 0 and mood_variance > 0:
+                    deep_sleep_mood_correlation = numerator / (deep_variance * mood_variance) ** 0.5
+
+    # Sleep Consistency Analysis
+    sleep_consistency_score = None
+    if sleep_data_entries and len(sleep_data_entries) > 1:
+        sleep_durations = [entry['sleep_data']['total_sleep_hours'] for entry in sleep_data_entries]
+        avg_duration = sum(sleep_durations) / len(sleep_durations)
+        variance = sum((d - avg_duration) ** 2 for d in sleep_durations) / len(sleep_durations)
+        std_dev = variance ** 0.5
+        # Lower standard deviation = higher consistency (invert for score)
+        sleep_consistency_score = max(0, 10 - std_dev * 2)  # Scale from 0-10
+
+    # Best Sleep Quality Day
+    best_sleep_day = None
+    best_sleep_quality_score = None
+    if sleep_data_entries:
+        for entry in sleep_data_entries:
+            sleep_data = entry['sleep_data']
+            # Calculate sleep quality score (deep + REM sleep as percentage of total)
+            total_sleep = sleep_data['total_sleep_hours']
+            if total_sleep > 0:
+                quality_sleep = sleep_data['deep_sleep_hours'] + sleep_data['rem_sleep_hours']
+                quality_score = (quality_sleep / total_sleep) * 100
+                
+                if best_sleep_quality_score is None or quality_score > best_sleep_quality_score:
+                    best_sleep_quality_score = quality_score
+                    best_sleep_day = entry['datetime'].strftime('%A, %B %d, %Y')
+
+    # Sleep Debt Analysis
+    sleep_debt_days = None
+    recommended_sleep = 8.0  # hours
+    if sleep_data_entries:
+        short_sleep_days = [entry for entry in sleep_data_entries if entry['sleep_data']['total_sleep_hours'] < recommended_sleep]
+        sleep_debt_days = len(short_sleep_days)
+
+    # Bedtime Consistency
+    bedtime_consistency = None
+    avg_bedtime = None
+    if sleep_data_entries:
+        bedtimes = []
+        for entry in sleep_data_entries:
+            start_time = entry['sleep_data']['start_time_seconds']
+            if start_time:
+                # Convert to hours from midnight
+                bedtime_hour = (start_time % 86400) / 3600
+                # Normalize late bedtimes (e.g., 23:00 = -1, 01:00 = 1)
+                if bedtime_hour > 12:
+                    bedtime_hour = bedtime_hour - 24
+                bedtimes.append(bedtime_hour)
+        
+        if bedtimes:
+            avg_bedtime = sum(bedtimes) / len(bedtimes)
+            if len(bedtimes) > 1:
+                variance = sum((b - avg_bedtime) ** 2 for b in bedtimes) / len(bedtimes)
+                std_dev = variance ** 0.5
+                bedtime_consistency = max(0, 10 - std_dev)  # Higher score = more consistent
+
+    # Weekend vs Weekday Sleep
+    weekday_sleep_avg = None
+    weekend_sleep_avg = None
+    if sleep_data_entries:
+        weekday_sleep = [entry['sleep_data']['total_sleep_hours'] for entry in sleep_data_entries if entry['datetime'].weekday() < 5]
+        weekend_sleep = [entry['sleep_data']['total_sleep_hours'] for entry in sleep_data_entries if entry['datetime'].weekday() >= 5]
+        
+        if weekday_sleep:
+            weekday_sleep_avg = sum(weekday_sleep) / len(weekday_sleep)
+        if weekend_sleep:
+            weekend_sleep_avg = sum(weekend_sleep) / len(weekend_sleep)
 
     # 9. Physical Activity Benefits
     physical_activities = ['sports', 'hockey', 'baseball', 'mma', 'basketball', 'soccer', 'football', 'tennis', 'golf', 'swimming', 'running', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym']
@@ -571,6 +762,74 @@ def generate_mood_summary(user_id, start_date, end_date):
     statistics.append({'name': 'Positive Words Count', 'description': f'You used {positive_word_count} positive words in your journal entries this week.'})
     if avg_sleep_mood is not None:
         statistics.append({'name': 'Sleep and Mood Correlation', 'description': f'When you had good sleep, your average mood was {avg_sleep_mood:.2f}.'})
+    
+    # Add new sleep-based insights
+    if avg_sleep_duration is not None:
+        statistics.append({'name': 'Average Sleep Duration', 'description': f'Your average sleep duration was {avg_sleep_duration:.1f} hours per night.'})
+    
+    if sleep_duration_mood_correlation is not None:
+        if sleep_duration_mood_correlation > 0.3:
+            correlation_desc = "strong positive"
+        elif sleep_duration_mood_correlation > 0.1:
+            correlation_desc = "moderate positive"
+        elif sleep_duration_mood_correlation < -0.3:
+            correlation_desc = "strong negative"
+        elif sleep_duration_mood_correlation < -0.1:
+            correlation_desc = "moderate negative"
+        else:
+            correlation_desc = "weak"
+        statistics.append({'name': 'Sleep Duration Impact', 'description': f'Your sleep duration shows a {correlation_desc} correlation with mood (r={sleep_duration_mood_correlation:.2f}).'})
+    
+    if avg_deep_sleep is not None:
+        statistics.append({'name': 'Deep Sleep Quality', 'description': f'You averaged {avg_deep_sleep:.1f} hours of deep sleep per night.'})
+    
+    if deep_sleep_mood_correlation is not None and deep_sleep_mood_correlation > 0.2:
+        statistics.append({'name': 'Deep Sleep Benefits', 'description': f'More deep sleep correlates with better moods (r={deep_sleep_mood_correlation:.2f}).'})
+    
+    if sleep_consistency_score is not None:
+        if sleep_consistency_score >= 8:
+            consistency_desc = "very consistent"
+        elif sleep_consistency_score >= 6:
+            consistency_desc = "fairly consistent"
+        elif sleep_consistency_score >= 4:
+            consistency_desc = "somewhat inconsistent"
+        else:
+            consistency_desc = "quite inconsistent"
+        statistics.append({'name': 'Sleep Schedule Consistency', 'description': f'Your sleep schedule was {consistency_desc} (consistency score: {sleep_consistency_score:.1f}/10).'})
+    
+    if best_sleep_day is not None and best_sleep_quality_score is not None:
+        statistics.append({'name': 'Best Sleep Quality Day', 'description': f'Your best sleep quality was on {best_sleep_day} with {best_sleep_quality_score:.1f}% deep and REM sleep.'})
+    
+    if sleep_debt_days is not None:
+        total_sleep_nights = len(sleep_data_entries)
+        debt_percentage = (sleep_debt_days / total_sleep_nights) * 100 if total_sleep_nights > 0 else 0
+        statistics.append({'name': 'Sleep Debt Analysis', 'description': f'You had less than 8 hours of sleep on {sleep_debt_days} out of {total_sleep_nights} nights ({debt_percentage:.0f}%).'})
+    
+    if bedtime_consistency is not None and avg_bedtime is not None:
+        # Convert avg_bedtime back to readable format
+        if avg_bedtime < 0:
+            bedtime_str = f"{int(24 + avg_bedtime):02d}:{int((avg_bedtime % 1) * 60):02d}"
+        else:
+            bedtime_str = f"{int(avg_bedtime):02d}:{int((avg_bedtime % 1) * 60):02d}"
+        
+        if bedtime_consistency >= 8:
+            consistency_desc = "very consistent"
+        elif bedtime_consistency >= 6:
+            consistency_desc = "fairly consistent"
+        else:
+            consistency_desc = "inconsistent"
+        statistics.append({'name': 'Bedtime Consistency', 'description': f'Your average bedtime was {bedtime_str} with {consistency_desc} timing (score: {bedtime_consistency:.1f}/10).'})
+    
+    if weekday_sleep_avg is not None and weekend_sleep_avg is not None:
+        sleep_difference = weekend_sleep_avg - weekday_sleep_avg
+        if abs(sleep_difference) > 0.5:
+            if sleep_difference > 0:
+                statistics.append({'name': 'Weekend Sleep Pattern', 'description': f'You sleep {sleep_difference:.1f} hours more on weekends ({weekend_sleep_avg:.1f}h) than weekdays ({weekday_sleep_avg:.1f}h).'})
+            else:
+                statistics.append({'name': 'Weekend Sleep Pattern', 'description': f'You sleep {abs(sleep_difference):.1f} hours less on weekends ({weekend_sleep_avg:.1f}h) than weekdays ({weekday_sleep_avg:.1f}h).'})
+        else:
+            statistics.append({'name': 'Weekend Sleep Pattern', 'description': f'Your sleep duration is consistent between weekdays ({weekday_sleep_avg:.1f}h) and weekends ({weekend_sleep_avg:.1f}h).'})
+    
     if avg_physical_mood is not None:
         statistics.append({'name': 'Physical Activity Benefits', 'description': f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.'})
     if consistency_percentage is not None:
@@ -595,7 +854,7 @@ def get_openai_insights(moods):
     prompt = """
     Assume today's date is {current_date}.
 
-    You will be given mood data in JSON format for the previous month. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
+    You will be given mood data in JSON format for the previous month. This data includes both mood entries and sleep data from Garmin devices. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
 
     **Instructions:**
 
@@ -603,24 +862,32 @@ def get_openai_insights(moods):
     - Answers must be clear, concise, and supported by specific examples or evidence from the data.
     - Do not repeat the questions.
     - Only output JSON, no extra text or explanation.
-    - For each answer, reference at least one relevant date and activity/comment from the sample data.
+    - For each answer, reference at least one relevant date and activity/comment/sleep data from the sample data.
     - For predictions, only give positive predictions based on trends you observe.
     - For 'small win', it must be a positive event from the last 7 days, with encouragement to celebrate it.
     - For 'prediction', it must be a positive prediction for the upcoming week, based on recent patterns.
-    - For 'insights', it must be a concise summary of the insights you can find about how comments, activities, and mood ratings relate to one another.
-    - For 'trends', it must be a concise summary of the most significant trends or correlations in the data from the past month.
+    - For 'insights', analyze relationships between mood ratings, activities, comments, AND sleep data if available.
+    - For 'trends', look for correlations involving sleep quality, duration, and mood patterns.
 
     **Questions:**
 
-    1. What insights can you find about how comments, activities, and mood ratings relate to one another?
-    2. What are the most significant trends or correlations in the data from the past month?
+    1. What insights can you find about how comments, activities, sleep data, and mood ratings relate to one another?
+    2. What are the most significant trends or correlations in the data from the past month, including sleep patterns if available?
     3. Identify a small win from the past week. Include encouragement to celebrate this.
-    4. Predict one positive thing that might happen with your moods next week, based on recent patterns.
+    4. Predict one positive thing that might happen with your moods next week, based on recent patterns including sleep if available.
 
-    **Details:**
+    **Data Details:**
     - Mood ratings are on a scale from 0-4 where 0 is the worst mood and 4 is the best mood.
     - Activities are tags for activities, aspects, observations, etc. that the user can associate with mood entries outside of their comment.
     - Comments are freeform text optionally input by the user about their day.
+    - Sleep data (when available) includes:
+      * total_sleep_hours: Total sleep duration in hours
+      * deep_sleep_hours: Deep sleep phase duration
+      * light_sleep_hours: Light sleep phase duration  
+      * rem_sleep_hours: REM sleep phase duration
+      * awake_hours: Time spent awake during sleep period
+      * start_time_seconds: Sleep start time (Unix timestamp)
+    - Some entries may have only mood data, only sleep data, or both. Analyze accordingly.
 
     # Mood Data:
 
@@ -629,10 +896,10 @@ def get_openai_insights(moods):
     # Example Output:
 
     {{
-        "Answer1": "Your mood ratings show a clear positive correlation with activities labeled as "connected" and "active." For example, on May 19, your mood reached a 4 after a day full of productive tasks for KT's birthday and a good workout. In contrast, on days like May 15, when work was stressful and there was less social interaction, your mood was lower. Social engagement and physical activity appear crucial for boosting your mood.",
+        "Answer1": "Your mood ratings show a clear positive correlation with activities labeled as "connected" and "active," plus sleep quality plays a crucial role. For example, on May 19, your mood reached a 4 after quality sleep (8.6 hours with good REM), productive tasks for KT's birthday, and a good workout. In contrast, on May 24 when you had only 6.65 hours of sleep and mentioned feeling exhausted, your mood was lower despite productivity. Sleep duration and social engagement appear crucial for boosting your mood.",
         "Answer2": "Looking at your entries for May, your mood generally stayed steady around a rating of 3, with higher peaks at 4 on days marked by active participation and strong social connections, such as May 19 and May 28. Regular exercise, whether in the form of sports or workouts, reliably boosts your mood. However, periods of work-related stress or lack of meaningful interaction tend to prevent your mood from rising higher.",
         "Answer3": "A small win from the past week was on May 28, when you went out for drinks with Craig and played hockey with noticeable enthusiasm, earning a mood rating of 4. This is a great example of how combining social activities and sports can significantly lift your mood. Take a moment to celebrate this win—maintaining these habits is not only enjoyable but also valuable for your emotional well-being.",
-        "Answer4": "Based on your recent habits, you can look forward to more positive moods in the coming week, especially if you continue prioritizing workouts and time spent with friends or family. Participating in hockey, staying active, and keeping up with social plans are likely to lead to more days rated at 4. Stay consistent with these routines and expect a strong, upbeat mood trend to continue."
+        "Answer4": "Based on your recent patterns, you can look forward to more positive moods in the coming week, especially if you maintain your sleep consistency of 8+ hours. Your data shows that good sleep (like the 9+ hour nights you've been having) combined with your regular workouts and social plans consistently leads to mood ratings of 4. Keep prioritizing sleep alongside your active lifestyle, and expect strong, upbeat mood trends to continue."
     }}
     """
 
@@ -701,7 +968,7 @@ def main():
         calendar_html = generate_calendar_html(start_date, end_date, moods)
         basic_stats = generate_mood_summary(user_id, start_date, end_date)
         
-        # Use ai_insights setting instead of accountLevel
+        # Use ai_insights setting to determine if we should generate AI insights
         if ai_insights_enabled == 1:
             openai_insights = get_openai_insights(moods)
             print(f"Generated AI insights for user {user_id} (ai_insights enabled)")

@@ -12,7 +12,8 @@ router.get('/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT users.name, users.email, users.accountLevel, 
+    `SELECT users.name, users.email, users.accountLevel,
+     users.garminConnected, users.garminUserId,
      user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
      user_settings.appDailyNotifications, user_settings.appWeeklySummary,
      user_settings.appDailyNotificationTime, user_settings.moodEmojis,
@@ -35,6 +36,8 @@ router.get('/settings', authenticateToken, (req, res) => {
         name: row.name,
         email: row.email,
         accountLevel: row.accountLevel,
+        garminConnected: row.garminConnected === 1,
+        garminUserId: row.garminUserId,
         emailDailyNotifications: row.emailDailyNotifications === 1,
         emailWeeklySummary: row.emailWeeklySummary === 1,
         appDailyNotifications: row.appDailyNotifications === 1,
@@ -407,6 +410,41 @@ router.get('/unsubscribe', (req, res) => {
       res.send(responseMessage);
     });
   });
+});
+
+// Get user sleep data
+router.get('/sleep', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  db.all(
+    `SELECT calendarDate, durationInHours, deepSleepDurationInHours, 
+     lightSleepDurationInHours, remSleepInHours, awakeDurationInHours,
+     startTimeInSeconds, startTimeOffsetInSeconds
+     FROM sleep_summaries 
+     WHERE userId = ? 
+     ORDER BY calendarDate DESC`,
+    [userId],
+    (err, rows) => {
+      if (err) {
+        logger.error('Error fetching user sleep data:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      const sleepData = rows.map(row => ({
+        date: row.calendarDate,
+        totalHours: row.durationInHours || 0,
+        deepHours: row.deepSleepDurationInHours || 0,
+        lightHours: row.lightSleepDurationInHours || 0,
+        remHours: row.remSleepInHours || 0,
+        awakeHours: row.awakeDurationInHours || 0,
+        startTimeSeconds: row.startTimeInSeconds,
+        startTimeOffsetSeconds: row.startTimeOffsetInSeconds
+      }));
+
+      logger.info(`Fetched ${sleepData.length} sleep entries for user: ${userId}`);
+      res.json(sleepData);
+    }
+  );
 });
 
 module.exports = router;

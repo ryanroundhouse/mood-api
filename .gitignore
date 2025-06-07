@@ -98,3 +98,4 @@ scripts/my_env
 .venv
 moodful-gcloud-api-key.json
 .env
+docs/

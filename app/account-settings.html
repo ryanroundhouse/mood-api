@@ -529,6 +529,59 @@
         animation: spin 1s linear infinite;
         z-index: 11;
       }
+      
+      /* Garmin Connect integration styles */
+      #garminContainer {
+        padding: 20px;
+        background: #f9f9f9;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      
+      #garminContainer h2 {
+        margin-bottom: 15px;
+        color: #333;
+      }
+      
+      #garminStatus {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #fff;
+        border-radius: 5px;
+        border-left: 4px solid #6a89cc;
+      }
+      
+      #garminStatus.connected {
+        border-left-color: #28a745;
+      }
+      
+      #garminStatus.error {
+        border-left-color: #dc3545;
+        background: #fff5f5;
+      }
+      
+      .form-button {
+        background-color: #6a89cc;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+        transition: background-color 0.3s ease;
+      }
+      
+      .form-button:hover {
+        background-color: #5a79bc;
+      }
+      
+      .form-button.disconnect-btn {
+        background-color: #dc3545;
+      }
+      
+      .form-button.disconnect-btn:hover {
+        background-color: #c82333;
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -616,7 +669,8 @@
         </div>
         <!-- Save button removed -->
       </form>
-      <div id="exportContainer" style="display: none; margin-top: 20px">
+      
+            <div id="exportContainer" style="display: none; margin-top: 20px">
         <button id="exportMoodData">Export Mood Data</button>
       </div>
 
@@ -666,6 +720,24 @@
         <div id="subscriptionActions">
           <button id="downgradeButton" style="display: none;">Cancel Subscription</button>
           <button id="renewButton" style="display: none;">Renew Subscription</button>
+        </div>
+      </div>
+      
+      <!-- Garmin Connect Integration Section -->
+      <div id="garminContainer" style="margin-top: 40px">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <img src="img/connect_logo_blue@2x.png" 
+               alt="Garmin Connect powered by Garmin logo" 
+               style="max-width: 200px; height: auto;"
+               role="img"
+               aria-labelledby="garmin-heading">
+        </div>
+        <div id="garminStatus">
+          <p>Loading Garmin connection status...</p>
+        </div>
+        <div id="garminActions">
+          <button id="connectGarmin" style="display: none;" class="form-button">Connect Garmin Account</button>
+          <button id="disconnectGarmin" style="display: none;" class="form-button disconnect-btn">Disconnect Garmin Account</button>
         </div>
       </div>
     </section>
@@ -1329,6 +1401,93 @@
         ).map((li) => li.textContent.replace('Delete', '').trim());
       }
 
+      // Garmin Connect functions
+      async function fetchGarminStatus() {
+        try {
+          const response = await authenticatedApiCall('/api/garmin/status', 'GET');
+          const statusElement = document.getElementById('garminStatus');
+          const connectButton = document.getElementById('connectGarmin');
+          const disconnectButton = document.getElementById('disconnectGarmin');
+          
+          if (response.connected) {
+            statusElement.innerHTML = `
+              <p><strong>Status:</strong> Connected to Garmin Connect</p>
+              <p>Your Garmin data can now be integrated with your mood tracking.</p>
+            `;
+            statusElement.className = 'connected';
+            connectButton.style.display = 'none';
+            disconnectButton.style.display = 'inline-block';
+          } else {
+            statusElement.innerHTML = `
+              <p><strong>Status:</strong> Not connected</p>
+              <p>Connect your Garmin account to automatically sync activity and health data with your mood tracking.</p>
+            `;
+            statusElement.className = '';
+            connectButton.style.display = 'inline-block';
+            disconnectButton.style.display = 'none';
+          }
+        } catch (error) {
+          console.error('Error fetching Garmin status:', error);
+          const statusElement = document.getElementById('garminStatus');
+          statusElement.innerHTML = '<p>Error loading Garmin connection status.</p>';
+          statusElement.className = 'error';
+        }
+      }
+
+      async function connectGarmin() {
+        try {
+          const connectButton = document.getElementById('connectGarmin');
+          setButtonLoading(connectButton, true);
+          
+          const response = await authenticatedApiCall('/api/garmin/start-auth', 'POST');
+          
+          if (response.authUrl) {
+            // Open Garmin authorization in a new window
+            const authWindow = window.open(response.authUrl, 'garmin-auth', 'width=600,height=700');
+            
+            // Monitor the auth window
+            const authCheckInterval = setInterval(() => {
+              try {
+                if (authWindow.closed) {
+                  clearInterval(authCheckInterval);
+                  setButtonLoading(connectButton, false);
+                  
+                  // Refresh status after popup closes - the callback page handles success/error display
+                  setTimeout(() => fetchGarminStatus(), 1000);
+                }
+              } catch (e) {
+                // Ignore cross-origin errors when checking authWindow status
+              }
+            }, 1000);
+          } else {
+            throw new Error('No authorization URL received');
+          }
+        } catch (error) {
+          console.error('Error starting Garmin authentication:', error);
+          showAlertBanner('Failed to start Garmin authentication. Please try again.', true);
+          setButtonLoading(document.getElementById('connectGarmin'), false);
+        }
+      }
+
+      async function disconnectGarmin() {
+        const confirmDisconnect = confirm('Are you sure you want to disconnect your Garmin account?');
+        if (!confirmDisconnect) return;
+        
+        try {
+          const disconnectButton = document.getElementById('disconnectGarmin');
+          setButtonLoading(disconnectButton, true);
+          
+          await authenticatedApiCall('/api/garmin/disconnect', 'POST');
+          showAlertBanner('Garmin account disconnected successfully!');
+          fetchGarminStatus();
+        } catch (error) {
+          console.error('Error disconnecting Garmin:', error);
+          showAlertBanner('Failed to disconnect Garmin account. Please try again.', true);
+        } finally {
+          setButtonLoading(document.getElementById('disconnectGarmin'), false);
+        }
+      }
+
       // Add event listener for adding new activity
       document
         .getElementById('addActivity')
@@ -1522,6 +1681,20 @@
 
       // Fetch user settings when the page loads
       fetchUserSettings();
+
+      // This logic is no longer needed since we use garmin-callback.html for OAuth results
+
+      // Fetch Garmin status when the page loads
+      fetchGarminStatus();
+
+      // Add event listeners for Garmin Connect
+      document
+        .getElementById('connectGarmin')
+        .addEventListener('click', connectGarmin);
+      
+      document
+        .getElementById('disconnectGarmin')
+        .addEventListener('click', disconnectGarmin);
 
       // Add event listener for mood data export
       document

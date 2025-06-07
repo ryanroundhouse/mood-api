@@ -33,6 +33,10 @@ process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy'
 process.env.STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || 'price_dummy';
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_dummy';
 
+// Garmin Connect OAuth fallbacks (integration will not work without real values)
+process.env.GARMIN_CONSUMER_KEY = process.env.GARMIN_CONSUMER_KEY || 'dummy_consumer_key';
+process.env.GARMIN_CONSUMER_SECRET = process.env.GARMIN_CONSUMER_SECRET || 'dummy_consumer_secret';
+
 // Add global error handler for uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
@@ -104,6 +108,10 @@ try {
   console.log('Loading mood routes...');
   const moodRoutes = require('./routes/moods');
   console.log('✓ mood routes loaded');
+  
+  console.log('Loading garmin routes...');
+  const garminRoutes = require('./routes/garmin');
+  console.log('✓ garmin routes loaded');
 
   const app = express();
   const port = 3000;
@@ -125,9 +133,15 @@ try {
   // Special handling for Stripe webhooks - must use raw body parser
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
   
+  // Special handling for Garmin webhooks - need larger size limit for sleep data
+  app.use('/api/garmin/sleep-webhook', express.raw({ 
+    type: 'application/json',
+    limit: '10mb'  // Allow up to 10MB for large sleep data backfills
+  }));
+  
   // Standard middleware for all other routes
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '2mb' }));  // Increase default limit from 100kb to 2mb
+  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
   // CORS configuration
   if (isDevelopment) {
@@ -158,6 +172,7 @@ try {
   app.use('/api/stripe', stripeRoutes);
   app.use('/api/contact', contactRoutes);
   app.use('/api/google-play', googlePlayRoutes);
+  app.use('/api/garmin', garminRoutes);
   app.use('/api/moods', moodRoutes);
   app.use('/api/mood', moodRoutes);
   console.log('✓ Routes configured');

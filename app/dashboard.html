@@ -531,6 +531,7 @@
 
       let activities = [];
       let selectedActivity = null;
+      let sleepData = [];
 
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
@@ -543,6 +544,21 @@
           return activities;
         } catch (error) {
           console.error('Error:', error);
+          return [];
+        }
+      }
+
+      // Fetch sleep data
+      async function fetchSleepData() {
+        try {
+          const response = await authenticatedApiCall(
+            '/api/user/sleep',
+            'GET'
+          );
+          sleepData = response;
+          return sleepData;
+        } catch (error) {
+          console.error('Error fetching sleep data:', error);
           return [];
         }
       }
@@ -603,15 +619,16 @@
       // Modify the fetchMoodEntries function
       async function fetchMoodEntries() {
         try {
-          const [moodResponse, activitiesResponse] = await Promise.all([
+          const [moodResponse, activitiesResponse, sleepResponse] = await Promise.all([
             authenticatedApiCall('/api/moods', 'GET'),
             fetchCustomActivities(),
+            fetchSleepData(),
           ]);
 
           updateActivitiesCombobox(activitiesResponse);
           createActivityButtons();
           preSelectTodayMood(moodResponse);
-          displayCalendar(moodResponse);
+          displayCalendar(moodResponse, sleepResponse);
         } catch (error) {
           console.error('Error:', error);
           showAlertBanner(
@@ -639,7 +656,7 @@
         });
       }
 
-      function displayCalendar(moods) {
+      function displayCalendar(moods, sleepDataArray = []) {
         const calendarDiv = document.getElementById('calendar');
         const currentMonth = currentDate.getMonth();
         const currentYear = currentDate.getFullYear();
@@ -678,9 +695,11 @@
         for (let i = 1; i <= daysInMonth; i++) {
           const dayDiv = document.createElement('div');
           dayDiv.classList.add('calendar-day');
-          dayDiv.textContent = i;
-
+          dayDiv.style.position = 'relative'; // For positioning the sleep emoji
+          
           const dayDate = new Date(currentYear, currentMonth, i);
+          const dateString = dayDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+          
           const mood = moods.find((m) => {
             const moodDate = new Date(m.datetime);
             return (
@@ -690,16 +709,61 @@
             );
           });
 
+          // Find sleep data for this day
+          const sleepDataForDay = sleepDataArray.find(s => s.date === dateString);
+          
+          // Create the day content
+          let dayContent = `<span>${i}</span>`;
+          
+          // Add comment emoji positioned in top right if comment exists
+          if (mood && mood.comment && mood.comment.trim() !== '') {
+            dayContent += `<span style="position: absolute; top: 2px; right: 2px; font-size: 0.8em;">📖</span>`;
+          }
+          
+          // Add sleep emoji positioned in top right (below comment if both exist) if sleep data exists
+          if (sleepDataForDay && sleepDataForDay.totalHours > 0) {
+            const topPosition = (mood && mood.comment && mood.comment.trim() !== '') ? '14px' : '2px';
+            dayContent += `<span style="position: absolute; top: ${topPosition}; right: 2px; font-size: 0.8em;">😴</span>`;
+          }
+          
+          dayDiv.innerHTML = dayContent;
+
+          // Build tooltip content
+          let tooltipContent = [];
+          
           if (mood) {
             dayDiv.classList.add('has-mood', `mood-${mood.rating}`);
             const activities = mood.activities
               ? JSON.parse(mood.activities)
               : [];
+            
+            tooltipContent.push(`Mood: ${mood.rating}/4`);
+            if (mood.comment && mood.comment !== 'No comment') {
+              tooltipContent.push(`Comment: ${mood.comment}`);
+            }
+            if (activities.length > 0) {
+              tooltipContent.push(`Activities: ${activities.join(', ')}`);
+            }
+            
             dayDiv.dataset.mood = JSON.stringify({
               rating: mood.rating,
               comment: mood.comment || 'No comment',
               activities: activities.join(', ') || 'None',
             });
+          }
+
+          // Add sleep data to tooltip and dataset if available
+          if (sleepDataForDay) {
+            tooltipContent.push(`Sleep: ${sleepDataForDay.totalHours.toFixed(1)} hours`);
+            if (sleepDataForDay.deepHours > 0) {
+              tooltipContent.push(`Deep: ${sleepDataForDay.deepHours.toFixed(1)}h, REM: ${sleepDataForDay.remHours.toFixed(1)}h`);
+            }
+            dayDiv.dataset.sleep = JSON.stringify(sleepDataForDay);
+          }
+
+          // Set the tooltip if we have any content
+          if (tooltipContent.length > 0) {
+            dayDiv.title = tooltipContent.join(' | ');
           }
 
           // Add this block to check if it's the current day
@@ -903,11 +967,23 @@
 
       // Add this new function
       function showMoodBubble(event) {
-        const moodData = JSON.parse(event.target.dataset.mood || '{}');
+        // Ensure we're working with the calendar day div, not a child element like emoji
+        let calendarDayElement = event.target;
+        if (!calendarDayElement.classList.contains('calendar-day')) {
+          calendarDayElement = calendarDayElement.closest('.calendar-day');
+        }
+        
+        const moodData = JSON.parse(calendarDayElement.dataset.mood || '{}');
+        const sleepData = JSON.parse(calendarDayElement.dataset.sleep || '{}');
+        
+        // Get the day number from the first child span which contains the day number
+        const dayNumberSpan = calendarDayElement.querySelector('span:first-child');
+        const dayNumber = parseInt(dayNumberSpan.textContent);
+        
         const clickedDate = new Date(
           currentDate.getFullYear(),
           currentDate.getMonth(),
-          parseInt(event.target.textContent),
+          dayNumber,
           12
         );
         const bubble = document.createElement('div');
@@ -917,9 +993,15 @@
 
         if (Object.keys(moodData).length === 0) {
           // No mood data, show mood submission form
+          let sleepInfo = '';
+          if (Object.keys(sleepData).length > 0) {
+            sleepInfo = `<p><strong>Sleep:</strong> ${sleepData.totalHours.toFixed(1)} hours</p>`;
+          }
+          
           bubble.innerHTML = `
             <span class="mood-bubble-close">&times;</span>
             <h3 class="bubble-title">Submit Mood for ${clickedDate.toDateString()}</h3>
+            ${sleepInfo}
             <div class="mood-options">
               <span class="mood-option" data-rating="0">😢</span>
               <span class="mood-option" data-rating="1">😕</span>
@@ -941,12 +1023,18 @@
           `;
         } else {
           // Existing mood data, show mood details
+          let sleepInfo = '';
+          if (Object.keys(sleepData).length > 0) {
+            sleepInfo = `<p><strong>Sleep:</strong> ${sleepData.totalHours.toFixed(1)} hours (Deep: ${sleepData.deepHours.toFixed(1)}h, REM: ${sleepData.remHours.toFixed(1)}h)</p>`;
+          }
+          
           bubble.innerHTML = `
             <span class="mood-bubble-close">&times;</span>
             <p><strong>Date:</strong> ${clickedDate.toDateString()}</p>
             <p><strong>Mood:</strong> ${moodData.rating}</p>
             <p><strong>Comment:</strong> ${moodData.comment}</p>
             <p><strong>Activities:</strong> ${moodData.activities}</p>
+            ${sleepInfo}
           `;
         }
 

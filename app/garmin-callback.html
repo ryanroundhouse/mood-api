@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garmin Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(40, 167, 69, 0.3);
+            border-radius: 50%;
+            border-top-color: #28a745;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="message">
+            <div class="spinner"></div>
+            Processing authentication...
+        </div>
+    </div>
+
+    <script>
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const success = urlParams.get('garmin_success');
+        const error = urlParams.get('garmin_error');
+        
+        const messageDiv = document.getElementById('message');
+        
+        if (success) {
+            messageDiv.innerHTML = '<div class="success">✓ Garmin account connected successfully!</div><p>This window will close automatically...</p>';
+        } else if (error) {
+            const errorMessage = error.replace(/_/g, ' ');
+            messageDiv.innerHTML = `<div class="error">✗ Failed to connect Garmin: ${errorMessage}</div><p>This window will close automatically...</p>`;
+        } else {
+            messageDiv.innerHTML = '<div class="error">✗ Authentication failed</div><p>This window will close automatically...</p>';
+        }
+        
+        // Close the window after 2 seconds
+        setTimeout(() => {
+            window.close();
+        }, 2000);
+    </script>
+</body>
+</html> 

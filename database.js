@@ -23,31 +23,83 @@ function initializeDatabase() {
       )
     `);
 
-    // Migration: add stripeSubscriptionStatus column if it doesn't exist
+    // Migration: add stripeSubscriptionStatus and Garmin columns if they don't exist
     db.all("PRAGMA table_info(users)", (err, columns) => {
       if (err) {
         logger.error('Error checking users table columns:', err);
         return;
       }
       
-      // Check if the column exists in the returned array
+      // Check if the columns exist in the returned array
       let hasSubscriptionStatus = false;
+      let hasGarminAccessToken = false;
+      let hasGarminTokenSecret = false;
+      let hasGarminUserId = false;
+      let hasGarminConnected = false;
+      
       if (Array.isArray(columns)) {
         for (const col of columns) {
           if (col.name === 'stripeSubscriptionStatus') {
             hasSubscriptionStatus = true;
-            break;
+          } else if (col.name === 'garminAccessToken') {
+            hasGarminAccessToken = true;
+          } else if (col.name === 'garminTokenSecret') {
+            hasGarminTokenSecret = true;
+          } else if (col.name === 'garminUserId') {
+            hasGarminUserId = true;
+          } else if (col.name === 'garminConnected') {
+            hasGarminConnected = true;
           }
         }
       }
       
-      // If the column doesn't exist, add it
+      // Add missing columns
       if (!hasSubscriptionStatus) {
         db.run("ALTER TABLE users ADD COLUMN stripeSubscriptionStatus TEXT DEFAULT 'none'", (alterErr) => {
           if (alterErr) {
             logger.error('Failed to add stripeSubscriptionStatus column:', alterErr);
           } else {
             logger.info('stripeSubscriptionStatus column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminAccessToken) {
+        db.run("ALTER TABLE users ADD COLUMN garminAccessToken TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminAccessToken column:', alterErr);
+          } else {
+            logger.info('garminAccessToken column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminTokenSecret) {
+        db.run("ALTER TABLE users ADD COLUMN garminTokenSecret TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminTokenSecret column:', alterErr);
+          } else {
+            logger.info('garminTokenSecret column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminUserId) {
+        db.run("ALTER TABLE users ADD COLUMN garminUserId TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminUserId column:', alterErr);
+          } else {
+            logger.info('garminUserId column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminConnected) {
+        db.run("ALTER TABLE users ADD COLUMN garminConnected INTEGER DEFAULT 0", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminConnected column:', alterErr);
+          } else {
+            logger.info('garminConnected column added to users table');
           }
         });
       }
@@ -209,6 +261,49 @@ function initializeDatabase() {
         expiresAt INTEGER NOT NULL,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS garmin_request_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        requestToken TEXT NOT NULL,
+        requestTokenSecret TEXT NOT NULL,
+        expiresAt INTEGER NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users(id)
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS sleep_summaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        garminUserId TEXT NOT NULL,
+        summaryId TEXT NOT NULL,
+        calendarDate TEXT NOT NULL,
+        startTimeInSeconds INTEGER NOT NULL,
+        startTimeOffsetInSeconds INTEGER,
+        durationInHours REAL NOT NULL,
+        deepSleepDurationInHours REAL DEFAULT 0,
+        lightSleepDurationInHours REAL DEFAULT 0,
+        remSleepInHours REAL DEFAULT 0,
+        awakeDurationInHours REAL DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id),
+        UNIQUE(userId, calendarDate)
+      )
+    `);
+
+    // Create index for efficient querying
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_sleep_summaries_user_date 
+      ON sleep_summaries(userId, calendarDate)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_sleep_summaries_garmin_user 
+      ON sleep_summaries(garminUserId)
     `);
 
     logger.info('Database tables initialized successfully');

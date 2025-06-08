@@ -269,10 +269,39 @@ function initializeDatabase() {
         userId INTEGER NOT NULL,
         requestToken TEXT NOT NULL,
         requestTokenSecret TEXT NOT NULL,
+        callbackUrl TEXT,
         expiresAt INTEGER NOT NULL,
         FOREIGN KEY (userId) REFERENCES users(id)
       )
     `);
+
+    // Migration: add callbackUrl column to garmin_request_tokens if it doesn't exist
+    db.all("PRAGMA table_info(garmin_request_tokens)", (err, columns) => {
+      if (err) {
+        logger.error('Error checking garmin_request_tokens columns:', err);
+        return;
+      }
+      
+      let hasCallbackUrl = false;
+      if (Array.isArray(columns)) {
+        for (const col of columns) {
+          if (col.name === 'callbackUrl') {
+            hasCallbackUrl = true;
+            break;
+          }
+        }
+      }
+      
+      if (!hasCallbackUrl) {
+        db.run("ALTER TABLE garmin_request_tokens ADD COLUMN callbackUrl TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add callbackUrl column to garmin_request_tokens:', alterErr);
+          } else {
+            logger.info('callbackUrl column added to garmin_request_tokens table');
+          }
+        });
+      }
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS sleep_summaries (

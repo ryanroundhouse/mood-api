@@ -722,4 +722,24 @@ router.post('/deregister-webhook', async (req, res) => {
   }
 });
 
+// User permission change endpoint to handle permission change notifications from Garmin
+router.post('/user-permission-change-webhook', async (req, res) => {
+  try {
+    console.log('=== GARMIN USER PERMISSION CHANGE RECEIVED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Raw body:', JSON.stringify(req.body, null, 2));
+    console.log('=== END USER PERMISSION CHANGE ===\n');
+
+    // Always respond with 200 OK to acknowledge receipt
+    res.status(200).json({ status: 'received' });
+
+  } catch (error) {
+    logger.error('Error processing user permission change webhook:', error);
+    console.error('User permission change webhook error:', error);
+    
+    // Still return 200 to avoid retry storms from Garmin
+    res.status(200).json({ status: 'error', message: 'Internal processing error' });
+  }
+});
+
 module.exports = router; 

@@ -3,6 +3,8 @@ const router = express.Router();
 const crypto = require('crypto');
 const querystring = require('querystring');
 const fetch = require('node-fetch');
+const fs = require('fs');
+const path = require('path');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken } = require('../middleware/auth');
 const { strictLimiter } = require('../middleware/rateLimiter');
@@ -493,22 +495,26 @@ router.post('/sleep-webhook', async (req, res) => {
     // Handle both raw and pre-parsed request bodies
     let sleepData;
     
-    if (typeof req.body === 'string') {
-      // Raw string body - parse as JSON
-      try {
-        sleepData = JSON.parse(req.body);
-      } catch (parseError) {
-        logger.error('Failed to parse sleep webhook JSON:', parseError);
-        return res.status(400).json({ error: 'Invalid JSON' });
-      }
+    // First, get the raw body content as a string
+    let rawBodyContent = '';
+    if (Buffer.isBuffer(req.body)) {
+      rawBodyContent = req.body.toString('utf8');
+    } else if (typeof req.body === 'string') {
+      rawBodyContent = req.body;
     } else if (typeof req.body === 'object' && req.body !== null) {
-      // Already parsed by Express middleware
-      sleepData = req.body;
-    } else {
-      // Handle Buffer or other types
+      // Check if it's already properly parsed JSON
+      if (req.body.hasOwnProperty('sleeps') || Array.isArray(req.body)) {
+        sleepData = req.body;
+      } else {
+        // It might be a string-like object, convert to string first
+        rawBodyContent = req.body.toString();
+      }
+    }
+    
+    // If we don't have sleepData yet, parse the raw content
+    if (!sleepData) {
       try {
-        const bodyStr = req.body.toString('utf8');
-        sleepData = JSON.parse(bodyStr);
+        sleepData = JSON.parse(rawBodyContent);
       } catch (parseError) {
         logger.error('Failed to parse sleep webhook JSON:', parseError);
         return res.status(400).json({ error: 'Invalid JSON' });
@@ -517,18 +523,26 @@ router.post('/sleep-webhook', async (req, res) => {
 
     console.log('=== GARMIN SLEEP DATA RECEIVED ===');
     console.log('Timestamp:', new Date().toISOString());
-    console.log('Data size:', bodyStr.length, 'bytes');
-
-    // Handle different notification types
+    
+    // Handle different notification types - support both wrapped and direct array formats
+    let sleepArray = [];
     if (sleepData.sleeps && Array.isArray(sleepData.sleeps)) {
-      console.log('Sleep summaries count:', sleepData.sleeps.length);
-      
+      sleepArray = sleepData.sleeps;
+      console.log('Sleep summaries count (wrapped format):', sleepArray.length);
+    } else if (Array.isArray(sleepData)) {
+      sleepArray = sleepData;
+      console.log('Sleep summaries count (direct array format):', sleepArray.length);
+    } else {
+      console.log('No sleep data array found in notification');
+    }
+
+    if (sleepArray.length > 0) {
       let storedCount = 0;
       let skippedCount = 0;
       let errorCount = 0;
 
-      for (let i = 0; i < sleepData.sleeps.length; i++) {
-        const sleep = sleepData.sleeps[i];
+      for (let i = 0; i < sleepArray.length; i++) {
+        const sleep = sleepArray[i];
         
         // Extract essential sleep data and convert durations from seconds to hours
         const sleepSummary = {
@@ -544,44 +558,28 @@ router.post('/sleep-webhook', async (req, res) => {
           awakeDurationInHours: Math.round((sleep.awakeDurationInSeconds || 0) / 3600 * 100) / 100
         };
 
-        console.log(`\n--- Sleep Summary ${i + 1} ---`);
-        console.log('Calendar Date:', sleepSummary.calendarDate);
-        console.log('Duration (hours):', sleepSummary.durationInHours);
-        console.log('Deep Sleep (hours):', sleepSummary.deepSleepDurationInHours);
-        console.log('Light Sleep (hours):', sleepSummary.lightSleepDurationInHours);
-        console.log('REM Sleep (hours):', sleepSummary.remSleepInHours);
-        console.log('Awake Time (hours):', sleepSummary.awakeDurationInHours);
+        console.log(`Processing sleep summary ${i + 1}: ${sleepSummary.calendarDate} (${sleepSummary.durationInHours}h)`);
 
         // Store in database
         try {
           const result = await storeSleepSummary(sleepSummary);
           if (result.status === 'stored') {
-            console.log(`✓ Sleep summary ${result.action} in database (ID: ${result.id})`);
             storedCount++;
           } else if (result.status === 'skipped') {
-            console.log(`⚠ Sleep summary skipped: ${result.reason}`);
             skippedCount++;
           }
         } catch (storeError) {
-          console.error(`✗ Error storing sleep summary:`, storeError.message);
           logger.error('Sleep summary storage error:', storeError);
           errorCount++;
         }
 
-        // Handle callback URL for ping notifications
-        if (sleep.callbackURL) {
-          console.log('📞 Callback URL provided:', sleep.callbackURL);
-          console.log('   This appears to be a PING notification');
-        }
+
       }
 
       console.log(`\n📊 Storage Summary:`);
       console.log(`   Stored: ${storedCount}`);
       console.log(`   Skipped: ${skippedCount}`);
       console.log(`   Errors: ${errorCount}`);
-
-    } else {
-      console.log('No sleep data array found in notification');
     }
 
     console.log('=== END SLEEP DATA ===\n');

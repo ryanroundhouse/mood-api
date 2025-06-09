@@ -99,3 +99,4 @@ scripts/my_env
 moodful-gcloud-api-key.json
 .env
 docs/
+debug/

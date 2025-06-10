@@ -108,8 +108,8 @@ function makeOAuthRequest(method, url, params, tokenSecret = '') {
     finalUrl = `${url}?${urlParams.toString()}`;
   }
   
-  logger.debug(`OAuth signature base string: ${baseString}`);
-  logger.debug(`OAuth authorization header: ${authHeader}`);
+  logger.info(`OAuth signature base string: ${baseString}`);
+  logger.info(`OAuth authorization header: ${authHeader}`);
   
   return fetch(finalUrl, {
     method: method,

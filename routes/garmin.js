@@ -67,7 +67,6 @@ function generateAuthorizationHeader(params) {
 
 function makeOAuthRequest(method, url, params, tokenSecret = '') {
   logger.info(`Making OAuth request: ${method} ${url}`);
-  logger.info(`OAuth params:`, JSON.stringify(params, null, 2));
   
   const oauthParams = {
     oauth_consumer_key: GARMIN_CONSUMER_KEY,
@@ -125,9 +124,6 @@ async function requestSleepBackfill(accessToken, tokenSecret) {
     const startTs = Math.floor(startTime.getTime() / 1000);
     const endTs = Math.floor(endTime.getTime() / 1000);
     
-    logger.info(`Sleep data range: ${startTime.toISOString()} to ${endTime.toISOString()}`);
-    logger.info(`Unix timestamps: ${startTs} to ${endTs}`);
-    
     // Make the backfill request - query parameters must be passed separately for OAuth signature
     const queryParams = {
       summaryStartTimeInSeconds: startTs.toString(),
@@ -173,33 +169,15 @@ router.post('/start-auth', strictLimiter, authenticateToken, async (req, res) =>
 
     const userId = req.user.id;
     
-    // Log the full request details for debugging
-    logger.info('=== GARMIN START-AUTH REQUEST ===');
-    logger.info(`User ID: ${userId}`);
-    logger.info(`Request method: ${req.method}`);
-    logger.info(`Request headers:`, JSON.stringify(req.headers, null, 2));
-    logger.info(`Request body:`, JSON.stringify(req.body, null, 2));
-    logger.info(`BASE_URL: ${BASE_URL}`);
-    
     // Use mobile callback URL if provided, otherwise default to web callback
     const requestedCallbackUrl = req.body?.callbackUrl;
     const callbackUrl = requestedCallbackUrl || `${BASE_URL}/api/garmin/callback`;
     
-    logger.info(`Requested callback URL: ${requestedCallbackUrl}`);
-    logger.info(`Final callback URL: ${callbackUrl}`);
-    logger.info(`Is mobile callback: ${callbackUrl.startsWith('moodful://')}`);
-    
-    logger.info(`Starting Garmin OAuth for user ${userId} with callback: ${callbackUrl}`);
-
-    // Log the OAuth request parameters
-    logger.info(`Making OAuth request with parameters:`);
-    logger.info(`  oauth_callback: ${callbackUrl}`);
+    logger.info(`Starting Garmin OAuth for user ${userId}`);
     
     const response = await makeOAuthRequest('POST', GARMIN_REQUEST_TOKEN_URL, {
       oauth_callback: callbackUrl
     });
-
-    logger.info(`OAuth request response status: ${response.status}`);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -214,12 +192,6 @@ router.post('/start-auth', strictLimiter, authenticateToken, async (req, res) =>
       logger.error('Invalid response from Garmin request token endpoint:', responseText);
       return res.status(500).json({ error: 'Invalid response from Garmin' });
     }
-
-    // Store request token temporarily in database
-    logger.info(`Storing request token in database:`);
-    logger.info(`  userId: ${userId}`);
-    logger.info(`  requestToken: ${tokenData.oauth_token}`);
-    logger.info(`  callbackUrl: ${callbackUrl}`);
     
     db.run(
       `INSERT OR REPLACE INTO garmin_request_tokens (userId, requestToken, requestTokenSecret, callbackUrl, expiresAt) VALUES (?, ?, ?, ?, ?)`,
@@ -231,9 +203,6 @@ router.post('/start-auth', strictLimiter, authenticateToken, async (req, res) =>
         }
 
         const authUrl = `${GARMIN_AUTHORIZE_URL}?oauth_token=${tokenData.oauth_token}`;
-        logger.info(`Generated Garmin auth URL for user ${userId}: ${authUrl}`);
-        logger.info('=== END START-AUTH REQUEST ===');
-        
         res.json({ authUrl });
       }
     );
@@ -245,15 +214,8 @@ router.post('/start-auth', strictLimiter, authenticateToken, async (req, res) =>
 
 // Helper function to handle redirects based on callback URL type
 function handleCallbackRedirect(res, callbackUrl, success = false, error = null) {
-  logger.info('=== CALLBACK REDIRECT DECISION ===');
-  logger.info(`Callback URL: ${callbackUrl}`);
-  logger.info(`Success: ${success}`);
-  logger.info(`Error: ${error}`);
-  logger.info(`Is mobile callback: ${callbackUrl && callbackUrl.startsWith('moodful://')}`);
-  
   if (callbackUrl && callbackUrl.startsWith('moodful://')) {
     // Mobile deep link - just redirect to the deep link
-    logger.info(`Redirecting to mobile deep link: ${callbackUrl}`);
     res.redirect(callbackUrl);
   } else {
     // Web callback - redirect to the HTML page with parameters
@@ -264,25 +226,33 @@ function handleCallbackRedirect(res, callbackUrl, success = false, error = null)
     } else {
       finalUrl = `${baseUrl}?garmin_error=${error || 'unknown_error'}`;
     }
-    logger.info(`Redirecting to web callback: ${finalUrl}`);
     res.redirect(finalUrl);
   }
-  logger.info('=== END CALLBACK REDIRECT ===');
 }
 
 // Step 2: Handle callback from Garmin
 router.get('/callback', async (req, res) => {
   try {
-    const { oauth_token, oauth_verifier } = req.query;
+    const { oauth_token, oauth_verifier, garmin_success, garmin_error } = req.query;
+
+    // Check if this is a success/error redirect (not an OAuth callback)
+    if (garmin_success || garmin_error) {
+      // This is a redirect after OAuth completion, serve the HTML page
+      const baseUrl = `${BASE_URL}/garmin-callback.html`;
+      let finalUrl;
+      if (garmin_success) {
+        finalUrl = `${baseUrl}?garmin_success=${garmin_success}`;
+      } else {
+        finalUrl = `${baseUrl}?garmin_error=${garmin_error}`;
+      }
+      return res.redirect(finalUrl);
+    }
 
     if (!oauth_token || !oauth_verifier) {
       logger.warn('Missing oauth_token or oauth_verifier in Garmin callback');
       return handleCallbackRedirect(res, null, false, 'missing_params');
     }
 
-    logger.info(`=== GARMIN CALLBACK RECEIVED ===`);
-    logger.info(`oauth_token: ${oauth_token}`);
-    logger.info(`oauth_verifier: ${oauth_verifier}`);
     logger.info(`Handling Garmin callback with token: ${oauth_token}`);
 
     // Get stored request token data
@@ -292,17 +262,8 @@ router.get('/callback', async (req, res) => {
       async (err, tokenData) => {
         if (err || !tokenData) {
           logger.error('Invalid or expired Garmin request token:', oauth_token);
-          logger.error('Database error:', err);
-          logger.error('Token data:', tokenData);
           return handleCallbackRedirect(res, null, false, 'invalid_token');
         }
-
-        logger.info('Retrieved token data from database:');
-        logger.info(`  userId: ${tokenData.userId}`);
-        logger.info(`  requestToken: ${tokenData.requestToken}`);
-        logger.info(`  callbackUrl: ${tokenData.callbackUrl}`);
-        logger.info(`  expiresAt: ${new Date(tokenData.expiresAt).toISOString()}`);
-        logger.info(`  isExpired: ${tokenData.expiresAt <= Date.now()}`);
 
         try {
           // Exchange request token for access token
@@ -359,14 +320,13 @@ router.get('/callback', async (req, res) => {
                 }
               );
 
-              logger.info(`Successfully connected Garmin account for user ${tokenData.userId}`);
+              logger.info(`✅ Successfully connected Garmin account for user ${tokenData.userId}`);
               
               // Automatically request sleep data backfill for the last 30 days
-              logger.info('Initiating automatic sleep data backfill...');
               requestSleepBackfill(accessTokenData.oauth_token, accessTokenData.oauth_token_secret)
                 .then((success) => {
                   if (success) {
-                    logger.info(`Sleep backfill initiated for user ${tokenData.userId}`);
+                    logger.info(`🛌 Sleep backfill initiated for user ${tokenData.userId}`);
                   } else {
                     logger.warn(`Failed to initiate sleep backfill for user ${tokenData.userId}`);
                   }
@@ -375,8 +335,6 @@ router.get('/callback', async (req, res) => {
                   logger.error(`Error initiating sleep backfill for user ${tokenData.userId}:`, error);
                 });
               
-              // Use stored callback URL for success redirect
-              logger.info(`Redirecting to callback URL: ${tokenData.callbackUrl || 'web callback'}`);
               handleCallbackRedirect(res, tokenData.callbackUrl, true);
             }
           );
@@ -405,7 +363,7 @@ router.post('/disconnect', strictLimiter, authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Error disconnecting Garmin account' });
       }
 
-      logger.info(`Disconnected Garmin account for user ${userId}`);
+      logger.info(`🔌 Disconnected Garmin account for user ${userId}`);
       res.json({ message: 'Garmin account disconnected successfully' });
     }
   );
@@ -521,22 +479,16 @@ router.post('/sleep-webhook', async (req, res) => {
       }
     }
 
-    console.log('=== GARMIN SLEEP DATA RECEIVED ===');
-    console.log('Timestamp:', new Date().toISOString());
-    
     // Handle different notification types - support both wrapped and direct array formats
     let sleepArray = [];
     if (sleepData.sleeps && Array.isArray(sleepData.sleeps)) {
       sleepArray = sleepData.sleeps;
-      console.log('Sleep summaries count (wrapped format):', sleepArray.length);
     } else if (Array.isArray(sleepData)) {
       sleepArray = sleepData;
-      console.log('Sleep summaries count (direct array format):', sleepArray.length);
-    } else {
-      console.log('No sleep data array found in notification');
     }
 
     if (sleepArray.length > 0) {
+      logger.info(`🛌 Received ${sleepArray.length} sleep summaries from Garmin`);
       let storedCount = 0;
       let skippedCount = 0;
       let errorCount = 0;
@@ -558,8 +510,6 @@ router.post('/sleep-webhook', async (req, res) => {
           awakeDurationInHours: Math.round((sleep.awakeDurationInSeconds || 0) / 3600 * 100) / 100
         };
 
-        console.log(`Processing sleep summary ${i + 1}: ${sleepSummary.calendarDate} (${sleepSummary.durationInHours}h)`);
-
         // Store in database
         try {
           const result = await storeSleepSummary(sleepSummary);
@@ -572,24 +522,16 @@ router.post('/sleep-webhook', async (req, res) => {
           logger.error('Sleep summary storage error:', storeError);
           errorCount++;
         }
-
-
       }
 
-      console.log(`\n📊 Storage Summary:`);
-      console.log(`   Stored: ${storedCount}`);
-      console.log(`   Skipped: ${skippedCount}`);
-      console.log(`   Errors: ${errorCount}`);
+      logger.info(`📊 Sleep data processed - Stored: ${storedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}`);
     }
-
-    console.log('=== END SLEEP DATA ===\n');
 
     // Always respond with 200 OK to acknowledge receipt
     res.status(200).json({ status: 'received' });
 
   } catch (error) {
     logger.error('Error processing sleep webhook:', error);
-    console.error('Sleep webhook error:', error);
     
     // Still return 200 to avoid retry storms from Garmin
     res.status(200).json({ status: 'error', message: 'Internal processing error' });
@@ -624,13 +566,9 @@ router.post('/deregister-webhook', async (req, res) => {
       }
     }
 
-    logger.info('=== GARMIN DEREGISTRATION RECEIVED ===');
-    logger.info('Timestamp:', new Date().toISOString());
-    logger.info('Data:', JSON.stringify(deregisterData, null, 2));
-
     // Handle deregistration notification
     if (deregisterData.deregistrations && Array.isArray(deregisterData.deregistrations)) {
-      logger.info(`Processing ${deregisterData.deregistrations.length} deregistration(s)`);
+      logger.info(`🚫 Processing ${deregisterData.deregistrations.length} Garmin deregistration(s)`);
       
       let processedCount = 0;
       let errorCount = 0;
@@ -644,8 +582,6 @@ router.post('/deregister-webhook', async (req, res) => {
             errorCount++;
             continue;
           }
-
-          logger.info(`Processing deregistration for Garmin user ID: ${garminUserId}`);
 
           // Find and deactivate the user's Garmin connection
           db.run(
@@ -661,7 +597,7 @@ router.post('/deregister-webhook', async (req, res) => {
                 logger.error(`Error deregistering Garmin user ${garminUserId}:`, err);
                 errorCount++;
               } else if (this.changes > 0) {
-                logger.info(`✓ Successfully deregistered Garmin user ${garminUserId} (${this.changes} user(s) updated)`);
+                logger.info(`✅ Deregistered Garmin user ${garminUserId}`);
                 processedCount++;
               } else {
                 logger.warn(`⚠ No active Garmin connection found for user ID ${garminUserId}`);
@@ -669,23 +605,20 @@ router.post('/deregister-webhook', async (req, res) => {
             }
           );
 
-          // Optionally, you might want to clean up related data or notify the user
-          // For now, we'll just log the deregistration
-
         } catch (processingError) {
           logger.error('Error processing individual deregistration:', processingError);
           errorCount++;
         }
       }
 
-      logger.info(`📊 Deregistration Summary:`);
-      logger.info(`   Processed: ${processedCount}`);
-      logger.info(`   Errors: ${errorCount}`);
+      if (processedCount > 0 || errorCount > 0) {
+        logger.info(`📊 Deregistration processed - Success: ${processedCount}, Errors: ${errorCount}`);
+      }
 
     } else if (deregisterData.userId) {
       // Handle single user deregistration (alternative format)
       const garminUserId = deregisterData.userId;
-      logger.info(`Processing single user deregistration for Garmin user ID: ${garminUserId}`);
+      logger.info(`🚫 Processing single Garmin deregistration for user ID: ${garminUserId}`);
 
       db.run(
         `UPDATE users SET 
@@ -699,7 +632,7 @@ router.post('/deregister-webhook', async (req, res) => {
           if (err) {
             logger.error(`Error deregistering Garmin user ${garminUserId}:`, err);
           } else if (this.changes > 0) {
-            logger.info(`✓ Successfully deregistered Garmin user ${garminUserId}`);
+            logger.info(`✅ Deregistered Garmin user ${garminUserId}`);
           } else {
             logger.warn(`⚠ No active Garmin connection found for user ID ${garminUserId}`);
           }
@@ -708,8 +641,6 @@ router.post('/deregister-webhook', async (req, res) => {
     } else {
       logger.warn('No valid deregistration data found in notification');
     }
-
-    logger.info('=== END DEREGISTRATION ===\n');
 
     // Always respond with 200 OK to acknowledge receipt
     res.status(200).json({ status: 'received' });
@@ -725,17 +656,13 @@ router.post('/deregister-webhook', async (req, res) => {
 // User permission change endpoint to handle permission change notifications from Garmin
 router.post('/user-permission-change-webhook', async (req, res) => {
   try {
-    console.log('=== GARMIN USER PERMISSION CHANGE RECEIVED ===');
-    console.log('Timestamp:', new Date().toISOString());
-    console.log('Raw body:', JSON.stringify(req.body, null, 2));
-    console.log('=== END USER PERMISSION CHANGE ===\n');
+    logger.info('🔄 Garmin user permission change received');
 
     // Always respond with 200 OK to acknowledge receipt
     res.status(200).json({ status: 'received' });
 
   } catch (error) {
     logger.error('Error processing user permission change webhook:', error);
-    console.error('User permission change webhook error:', error);
     
     // Still return 200 to avoid retry storms from Garmin
     res.status(200).json({ status: 'error', message: 'Internal processing error' });

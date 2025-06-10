@@ -44,13 +44,4 @@ const logger = winston.createLogger({
   ],
 });
 
-// If we're not in production, also log to the console with simpler formatting
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: format.combine(format.colorize(), format.simple()),
-    })
-  );
-}
-
 module.exports = logger;

@@ -68,6 +68,12 @@ function generateAuthorizationHeader(params) {
 function makeOAuthRequest(method, url, params, tokenSecret = '') {
   logger.info(`Making OAuth request: ${method} ${url}`);
   
+  // Check if OAuth credentials are available
+  if (!GARMIN_CONSUMER_KEY || !GARMIN_CONSUMER_SECRET) {
+    logger.error('🔐 Missing Garmin OAuth credentials');
+    throw new Error('Missing OAuth credentials');
+  }
+  
   const oauthParams = {
     oauth_consumer_key: GARMIN_CONSUMER_KEY,
     oauth_signature_method: 'HMAC-SHA1',
@@ -101,6 +107,9 @@ function makeOAuthRequest(method, url, params, tokenSecret = '') {
     const urlParams = new URLSearchParams(queryParams);
     finalUrl = `${url}?${urlParams.toString()}`;
   }
+  
+  logger.debug(`OAuth signature base string: ${baseString}`);
+  logger.debug(`OAuth authorization header: ${authHeader}`);
   
   return fetch(finalUrl, {
     method: method,
@@ -181,7 +190,19 @@ router.post('/start-auth', strictLimiter, authenticateToken, async (req, res) =>
     
     if (!response.ok) {
       const errorText = await response.text();
-      logger.error('Failed to get Garmin request token:', errorText);
+      logger.error(`Failed to get Garmin request token: HTTP ${response.status} ${response.statusText}`);
+      logger.error(`Response body: ${errorText || '(empty)'}`);
+      logger.error(`Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+      
+      // Check for common issues
+      if (response.status === 401) {
+        logger.error('🔐 OAuth credentials may be invalid or expired');
+      } else if (response.status === 400) {
+        logger.error('📝 OAuth request parameters may be malformed');
+      } else if (response.status >= 500) {
+        logger.error('🔧 Garmin server error - try again later');
+      }
+      
       return res.status(500).json({ error: 'Failed to start Garmin authentication' });
     }
 
@@ -274,7 +295,8 @@ router.get('/callback', async (req, res) => {
 
           if (!response.ok) {
             const errorText = await response.text();
-            logger.error('Failed to get Garmin access token:', errorText);
+            logger.error(`Failed to get Garmin access token: HTTP ${response.status} ${response.statusText}`);
+            logger.error(`Response body: ${errorText || '(empty)'}`);
             return handleCallbackRedirect(res, tokenData.callbackUrl, false, 'token_exchange_failed');
           }
 

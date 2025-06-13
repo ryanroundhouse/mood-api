@@ -17,6 +17,7 @@ const GARMIN_AUTHORIZE_URL = 'https://connect.garmin.com/oauthConfirm';
 const GARMIN_ACCESS_TOKEN_URL = 'https://connectapi.garmin.com/oauth-service/oauth/access_token';
 const GARMIN_USER_ID_URL = 'https://apis.garmin.com/wellness-api/rest/user/id';
 const GARMIN_BACKFILL_SLEEP_URL = 'https://apis.garmin.com/wellness-api/rest/backfill/sleeps';
+const GARMIN_BACKFILL_DAILIES_URL = 'https://apis.garmin.com/wellness-api/rest/backfill/dailies';
 
 // OAuth configuration from environment variables
 const GARMIN_CONSUMER_KEY = process.env.GARMIN_CONSUMER_KEY;
@@ -164,6 +165,54 @@ async function requestSleepBackfill(accessToken, tokenSecret) {
     }
   } catch (error) {
     logger.error('Error requesting sleep backfill:', error);
+    return false;
+  }
+}
+
+// Function to request daily summaries backfill for the last 30 days
+async function requestDailiesBackfill(accessToken, tokenSecret) {
+  try {
+    logger.info('Requesting daily summaries backfill for the last 30 days');
+    
+    // Calculate the time range for daily data (last 30 days)
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days ago
+    
+    // Convert to Unix timestamps
+    const startTs = Math.floor(startTime.getTime() / 1000);
+    const endTs = Math.floor(endTime.getTime() / 1000);
+    
+    // Make the backfill request - query parameters must be passed separately for OAuth signature
+    const queryParams = {
+      summaryStartTimeInSeconds: startTs.toString(),
+      summaryEndTimeInSeconds: endTs.toString()
+    };
+    
+    const response = await makeOAuthRequest('GET', GARMIN_BACKFILL_DAILIES_URL, {
+      oauth_token: accessToken,
+      ...queryParams  // Include query params in OAuth signature calculation
+    }, tokenSecret);
+
+    if (response.ok) {
+      logger.info('✓ Dailies backfill request submitted successfully');
+      logger.info('🔄 Garmin will process the backfill request asynchronously');
+      logger.info('📨 Daily summaries will be sent to the webhook endpoint when ready');
+      return true;
+    } else {
+      const errorText = await response.text();
+      
+      // Try to parse as JSON if possible
+      try {
+        const errorJson = JSON.parse(errorText);
+        logger.error('Parsed error JSON:', errorJson);
+      } catch (parseErr) {
+        logger.error('Failed to request dailies backfill:', errorText);
+      }
+      
+      return false;
+    }
+  } catch (error) {
+    logger.error('Error requesting dailies backfill:', error);
     return false;
   }
 }
@@ -357,6 +406,19 @@ router.get('/callback', async (req, res) => {
                   logger.error(`Error initiating sleep backfill for user ${tokenData.userId}:`, error);
                 });
               
+              // Automatically request daily summaries backfill for the last 30 days
+              requestDailiesBackfill(accessTokenData.oauth_token, accessTokenData.oauth_token_secret)
+                .then((success) => {
+                  if (success) {
+                    logger.info(`📊 Dailies backfill initiated for user ${tokenData.userId}`);
+                  } else {
+                    logger.warn(`Failed to initiate dailies backfill for user ${tokenData.userId}`);
+                  }
+                })
+                .catch((error) => {
+                  logger.error(`Error initiating dailies backfill for user ${tokenData.userId}:`, error);
+                });
+              
               handleCallbackRedirect(res, tokenData.callbackUrl, true);
             }
           );
@@ -469,6 +531,63 @@ function storeSleepSummary(sleepSummary) {
   });
 }
 
+// Helper function to store daily summary in database
+function storeDailySummary(dailySummary) {
+  return new Promise((resolve, reject) => {
+    // First, find the local user ID from the Garmin user ID
+    db.get(
+      `SELECT id FROM users WHERE garminUserId = ? AND garminConnected = 1`,
+      [dailySummary.garminUserId],
+      (err, user) => {
+        if (err) {
+          logger.error('Error finding user by Garmin ID:', err);
+          reject(err);
+          return;
+        }
+
+        if (!user) {
+          logger.warn(`No local user found for Garmin user ID: ${dailySummary.garminUserId}`);
+          resolve({ status: 'skipped', reason: 'user not found' });
+          return;
+        }
+
+        // Insert or replace daily summary (overwrites existing data for same user/date)
+        db.run(`
+          INSERT OR REPLACE INTO daily_summaries (
+            userId, garminUserId, summaryId, calendarDate, steps, 
+            distanceInMeters, activeTimeInHours, floorsClimbed,
+            averageStressLevel, maxStressLevel, stressDurationInMinutes,
+            updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `, [
+          user.id,
+          dailySummary.garminUserId,
+          dailySummary.summaryId,
+          dailySummary.calendarDate,
+          dailySummary.steps,
+          dailySummary.distanceInMeters,
+          dailySummary.activeTimeInHours,
+          dailySummary.floorsClimbed,
+          dailySummary.averageStressLevel,
+          dailySummary.maxStressLevel,
+          dailySummary.stressDurationInMinutes
+        ], function(insertErr) {
+          if (insertErr) {
+            logger.error('Error storing daily summary:', insertErr);
+            reject(insertErr);
+          } else {
+            resolve({ 
+              status: 'stored', 
+              id: this.lastID,
+              action: this.changes > 0 ? 'updated' : 'inserted'
+            });
+          }
+        });
+      }
+    );
+  });
+}
+
 // Webhook endpoint to receive sleep data from Garmin Health API
 router.post('/sleep-webhook', async (req, res) => {
   try {
@@ -554,6 +673,97 @@ router.post('/sleep-webhook', async (req, res) => {
 
   } catch (error) {
     logger.error('Error processing sleep webhook:', error);
+    
+    // Still return 200 to avoid retry storms from Garmin
+    res.status(200).json({ status: 'error', message: 'Internal processing error' });
+  }
+});
+
+// Webhook endpoint to receive daily summaries from Garmin Health API
+router.post('/dailies-webhook', async (req, res) => {
+  try {
+    // Handle both raw and pre-parsed request bodies
+    let dailyData;
+    
+    // First, get the raw body content as a string
+    let rawBodyContent = '';
+    if (Buffer.isBuffer(req.body)) {
+      rawBodyContent = req.body.toString('utf8');
+    } else if (typeof req.body === 'string') {
+      rawBodyContent = req.body;
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      // Check if it's already properly parsed JSON
+      if (req.body.hasOwnProperty('dailies') || Array.isArray(req.body)) {
+        dailyData = req.body;
+      } else {
+        // It might be a string-like object, convert to string first
+        rawBodyContent = req.body.toString();
+      }
+    }
+    
+    // If we don't have dailyData yet, parse the raw content
+    if (!dailyData) {
+      try {
+        dailyData = JSON.parse(rawBodyContent);
+      } catch (parseError) {
+        logger.error('Failed to parse dailies webhook JSON:', parseError);
+        return res.status(400).json({ error: 'Invalid JSON' });
+      }
+    }
+
+    // Handle different notification types - support both wrapped and direct array formats
+    let dailyArray = [];
+    if (dailyData.dailies && Array.isArray(dailyData.dailies)) {
+      dailyArray = dailyData.dailies;
+    } else if (Array.isArray(dailyData)) {
+      dailyArray = dailyData;
+    }
+
+    if (dailyArray.length > 0) {
+      logger.info(`📊 Received ${dailyArray.length} daily summaries from Garmin`);
+      let storedCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < dailyArray.length; i++) {
+        const daily = dailyArray[i];
+        
+        // Extract essential daily data and convert units
+        const dailySummary = {
+          garminUserId: daily.userId,
+          summaryId: daily.summaryId,
+          calendarDate: daily.calendarDate,
+          steps: daily.steps || 0,
+          distanceInMeters: daily.distanceInMeters || 0,
+          activeTimeInHours: Math.round((daily.activeTimeInSeconds || 0) / 3600 * 100) / 100,
+          floorsClimbed: daily.floorsClimbed || 0,
+          averageStressLevel: daily.averageStressLevel,
+          maxStressLevel: daily.maxStressLevel,
+          stressDurationInMinutes: Math.round((daily.stressDurationInSeconds || 0) / 60 * 100) / 100
+        };
+
+        // Store in database
+        try {
+          const result = await storeDailySummary(dailySummary);
+          if (result.status === 'stored') {
+            storedCount++;
+          } else if (result.status === 'skipped') {
+            skippedCount++;
+          }
+        } catch (storeError) {
+          logger.error('Daily summary storage error:', storeError);
+          errorCount++;
+        }
+      }
+
+      logger.info(`📊 Daily data processed - Stored: ${storedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}`);
+    }
+
+    // Always respond with 200 OK to acknowledge receipt
+    res.status(200).json({ status: 'received' });
+
+  } catch (error) {
+    logger.error('Error processing dailies webhook:', error);
     
     // Still return 200 to avoid retry storms from Garmin
     res.status(200).json({ status: 'error', message: 'Internal processing error' });

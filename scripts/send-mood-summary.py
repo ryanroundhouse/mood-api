@@ -156,6 +156,40 @@ def get_user_moods(user_id, start_date, end_date):
                 'sleep_data': sleep_data
             }
     
+    # Fetch daily summary data for the same date range
+    cursor.execute("""
+        SELECT calendarDate, steps, distanceInMeters, activeTimeInHours, 
+               floorsClimbed, averageStressLevel, maxStressLevel, stressDurationInMinutes
+        FROM daily_summaries
+        WHERE userId = ? AND calendarDate >= ? AND calendarDate <= ?
+    """, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+    
+    # Merge daily summary data into mood entries
+    for daily_row in cursor.fetchall():
+        calendar_date = daily_row[0]  # calendarDate is already in YYYY-MM-DD format
+        daily_data = {
+            'steps': daily_row[1] if daily_row[1] else 0,
+            'distance_meters': daily_row[2] if daily_row[2] else 0,
+            'active_time_hours': daily_row[3] if daily_row[3] else 0,
+            'floors_climbed': daily_row[4] if daily_row[4] else 0,
+            'average_stress_level': daily_row[5] if daily_row[5] else None,
+            'max_stress_level': daily_row[6] if daily_row[6] else None,
+            'stress_duration_minutes': daily_row[7] if daily_row[7] else 0
+        }
+        
+        # If mood entry exists for this date, add daily data to it
+        if calendar_date in moods:
+            moods[calendar_date]['daily_data'] = daily_data
+        else:
+            # Create a mood entry with just daily data (no mood rating)
+            moods[calendar_date] = {
+                'date': calendar_date,
+                'rating': None,
+                'comment': None,
+                'activities': [],
+                'daily_data': daily_data
+            }
+    
     conn.close()
     return moods
 
@@ -269,20 +303,45 @@ def generate_calendar_html(start_date, end_date, moods):
                             sleep_hours = mood['sleep_data'].get('total_sleep_hours', 0)
                             sleep_indicator = f' <span title="{sleep_hours:.1f} hours of sleep" style="cursor: help;">😴</span>'
                         
+                        # Add daily activity indicator if available
+                        activity_indicator = ""
+                        if 'daily_data' in mood:
+                            steps = mood['daily_data'].get('steps', 0)
+                            distance_km = mood['daily_data'].get('distance_meters', 0) / 1000
+                            active_hours = mood['daily_data'].get('active_time_hours', 0)
+                            activity_indicator = f' <span title="{steps:,} steps, {distance_km:.1f}km, {active_hours:.1f}h active" style="cursor: help;">👟</span>'
+                        
                         cell_content = f"""
-                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{comment_display}{sleep_indicator}</div>
+                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{comment_display}{sleep_indicator}{activity_indicator}</div>
                         <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">{mood_label}</div>
                         {f'<div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{activities}</div>' if activities else ''}
                         """
                     else:
-                        # Only sleep data, no mood rating
-                        bg_color = '#e8f4fd'  # Light blue for sleep-only data
-                        sleep_hours = mood.get('sleep_data', {}).get('total_sleep_hours', 0)
-                        sleep_indicator = f' <span title="{sleep_hours:.1f} hours of sleep" style="cursor: help;">😴</span>'
+                        # Only sleep/daily data, no mood rating
+                        bg_color = '#e8f4fd'  # Light blue for data-only entries
+                        
+                        # Build indicators and description
+                        indicators = ""
+                        descriptions = []
+                        
+                        if 'sleep_data' in mood:
+                            sleep_hours = mood['sleep_data'].get('total_sleep_hours', 0)
+                            indicators += f' <span title="{sleep_hours:.1f} hours of sleep" style="cursor: help;">😴</span>'
+                            descriptions.append(f"{sleep_hours:.1f}h sleep")
+                        
+                        if 'daily_data' in mood:
+                            steps = mood['daily_data'].get('steps', 0)
+                            distance_km = mood['daily_data'].get('distance_meters', 0) / 1000
+                            active_hours = mood['daily_data'].get('active_time_hours', 0)
+                            indicators += f' <span title="{steps:,} steps, {distance_km:.1f}km, {active_hours:.1f}h active" style="cursor: help;">👟</span>'
+                            descriptions.append(f"{steps:,} steps")
+                        
+                        description_text = ", ".join(descriptions) if descriptions else "Data available"
+                        
                         cell_content = f"""
-                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{sleep_indicator}</div>
-                        <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">Sleep only</div>
-                        <div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{sleep_hours:.1f}h sleep</div>
+                        <div style="font-weight: bold; margin-bottom: 3px;">{current_date.day}{indicators}</div>
+                        <div style="font-size: 0.8em; margin-bottom: 3px; color: #333;">Data only (no mood rating)</div>
+                        <div style="font-size: 0.7em; margin-bottom: 2px; color: #666;">{description_text}</div>
                         """
                 else:
                     bg_color = '#f9f9f9'
@@ -316,9 +375,10 @@ def generate_calendar_html(start_date, end_date, moods):
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #ffffba; margin-right: 5px; border: 1px solid #ddd;"></span>Neutral (2)</div>
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #baffc9; margin-right: 5px; border: 1px solid #ddd;"></span>Happy (3)</div>
             <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #bae1ff; margin-right: 5px; border: 1px solid #ddd;"></span>Very Happy (4)</div>
-            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #e8f4fd; margin-right: 5px; border: 1px solid #ddd;"></span>Sleep data only</div>
+            <div><span style="display: inline-block; width: 20px; height: 20px; background-color: #e8f4fd; margin-right: 5px; border: 1px solid #ddd;"></span>Data only (no mood rating)</div>
             <div><span style="margin-left: 10px;">📖 = Has comment (hover for details)</span></div>
             <div><span style="margin-left: 10px;">😴 = Sleep data available</span></div>
+            <div><span style="margin-left: 10px;">👟 = Daily activity data available</span></div>
         </div>
         <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
             <strong>Note:</strong> Thick borders indicate month boundaries. Grayed out days are outside the 30-day period.
@@ -652,6 +712,177 @@ def generate_mood_summary(user_id, start_date, end_date):
         if weekend_sleep:
             weekend_sleep_avg = sum(weekend_sleep) / len(weekend_sleep)
 
+    # New Daily Activity Data Analysis (only if daily data is available)
+    daily_data_entries = []
+    for entry in data:
+        # Check if we have daily activity data stored
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT calendarDate, steps, distanceInMeters, activeTimeInHours, 
+                   floorsClimbed, averageStressLevel, maxStressLevel, stressDurationInMinutes
+            FROM daily_summaries
+            WHERE userId = ? AND calendarDate = ?
+        """, (user_id, entry['datetime'].strftime('%Y-%m-%d')))
+        daily_row = cursor.fetchone()
+        conn.close()
+        
+        if daily_row:
+            daily_entry = entry.copy()
+            daily_entry['daily_data'] = {
+                'steps': daily_row[1] if daily_row[1] else 0,
+                'distance_meters': daily_row[2] if daily_row[2] else 0,
+                'active_time_hours': daily_row[3] if daily_row[3] else 0,
+                'floors_climbed': daily_row[4] if daily_row[4] else 0,
+                'average_stress_level': daily_row[5] if daily_row[5] else None,
+                'max_stress_level': daily_row[6] if daily_row[6] else None,
+                'stress_duration_minutes': daily_row[7] if daily_row[7] else 0
+            }
+            daily_data_entries.append(daily_entry)
+
+    # Steps and Mood Correlation
+    steps_mood_correlation = None
+    avg_daily_steps = None
+    if daily_data_entries:
+        daily_steps = [entry['daily_data']['steps'] for entry in daily_data_entries]
+        steps_moods = [entry['rating'] for entry in daily_data_entries]
+        avg_daily_steps = sum(daily_steps) / len(daily_steps)
+        
+        # Calculate correlation coefficient
+        if len(daily_steps) > 1:
+            mean_steps = sum(daily_steps) / len(daily_steps)
+            mean_mood = sum(steps_moods) / len(steps_moods)
+            
+            numerator = sum((s - mean_steps) * (m - mean_mood) for s, m in zip(daily_steps, steps_moods))
+            steps_variance = sum((s - mean_steps) ** 2 for s in daily_steps)
+            mood_variance = sum((m - mean_mood) ** 2 for m in steps_moods)
+            
+            if steps_variance > 0 and mood_variance > 0:
+                steps_mood_correlation = numerator / (steps_variance * mood_variance) ** 0.5
+
+    # Most Active Day
+    most_active_day = None
+    highest_step_count = None
+    if daily_data_entries:
+        most_active_entry = max(daily_data_entries, key=lambda x: x['daily_data']['steps'])
+        most_active_day = most_active_entry['datetime'].strftime('%A, %B %d, %Y')
+        highest_step_count = most_active_entry['daily_data']['steps']
+
+    # Active Time and Mood Analysis
+    active_time_mood_correlation = None
+    avg_active_time = None
+    if daily_data_entries:
+        active_times = [entry['daily_data']['active_time_hours'] for entry in daily_data_entries if entry['daily_data']['active_time_hours'] > 0]
+        if active_times:
+            avg_active_time = sum(active_times) / len(active_times)
+            active_time_moods = [entry['rating'] for entry in daily_data_entries if entry['daily_data']['active_time_hours'] > 0]
+            
+            if len(active_times) > 1:
+                mean_active = sum(active_times) / len(active_times)
+                mean_mood = sum(active_time_moods) / len(active_time_moods)
+                
+                numerator = sum((a - mean_active) * (m - mean_mood) for a, m in zip(active_times, active_time_moods))
+                active_variance = sum((a - mean_active) ** 2 for a in active_times)
+                mood_variance = sum((m - mean_mood) ** 2 for m in active_time_moods)
+                
+                if active_variance > 0 and mood_variance > 0:
+                    active_time_mood_correlation = numerator / (active_variance * mood_variance) ** 0.5
+
+    # Distance Traveled Analysis
+    avg_daily_distance_km = None
+    distance_mood_correlation = None
+    if daily_data_entries:
+        distances_km = [entry['daily_data']['distance_meters'] / 1000 for entry in daily_data_entries if entry['daily_data']['distance_meters'] > 0]
+        if distances_km:
+            avg_daily_distance_km = sum(distances_km) / len(distances_km)
+            distance_moods = [entry['rating'] for entry in daily_data_entries if entry['daily_data']['distance_meters'] > 0]
+            
+            if len(distances_km) > 1:
+                mean_distance = sum(distances_km) / len(distances_km)
+                mean_mood = sum(distance_moods) / len(distance_moods)
+                
+                numerator = sum((d - mean_distance) * (m - mean_mood) for d, m in zip(distances_km, distance_moods))
+                distance_variance = sum((d - mean_distance) ** 2 for d in distances_km)
+                mood_variance = sum((m - mean_mood) ** 2 for m in distance_moods)
+                
+                if distance_variance > 0 and mood_variance > 0:
+                    distance_mood_correlation = numerator / (distance_variance * mood_variance) ** 0.5
+
+    # Stress Level Analysis
+    avg_stress_level = None
+    stress_mood_correlation = None
+    high_stress_days = None
+    if daily_data_entries:
+        stress_levels = [entry['daily_data']['average_stress_level'] for entry in daily_data_entries if entry['daily_data']['average_stress_level'] is not None]
+        if stress_levels:
+            avg_stress_level = sum(stress_levels) / len(stress_levels)
+            stress_moods = [entry['rating'] for entry in daily_data_entries if entry['daily_data']['average_stress_level'] is not None]
+            
+            # Count high stress days (>= 70 on 0-100 scale)
+            high_stress_days = len([level for level in stress_levels if level >= 70])
+            
+            if len(stress_levels) > 1:
+                mean_stress = sum(stress_levels) / len(stress_levels)
+                mean_mood = sum(stress_moods) / len(stress_moods)
+                
+                numerator = sum((s - mean_stress) * (m - mean_mood) for s, m in zip(stress_levels, stress_moods))
+                stress_variance = sum((s - mean_stress) ** 2 for s in stress_levels)
+                mood_variance = sum((m - mean_mood) ** 2 for m in stress_moods)
+                
+                if stress_variance > 0 and mood_variance > 0:
+                    stress_mood_correlation = numerator / (stress_variance * mood_variance) ** 0.5
+
+    # Activity Consistency Analysis
+    activity_consistency_score = None
+    if daily_data_entries and len(daily_data_entries) > 1:
+        daily_steps = [entry['daily_data']['steps'] for entry in daily_data_entries]
+        avg_steps = sum(daily_steps) / len(daily_steps)
+        variance = sum((s - avg_steps) ** 2 for s in daily_steps) / len(daily_steps)
+        std_dev = variance ** 0.5
+        # Lower standard deviation = higher consistency (invert for score)
+        if avg_steps > 0:
+            activity_consistency_score = max(0, 10 - (std_dev / avg_steps) * 20)  # Scale from 0-10
+
+    # Weekend vs Weekday Activity
+    weekday_steps_avg = None
+    weekend_steps_avg = None
+    weekday_active_time_avg = None
+    weekend_active_time_avg = None
+    if daily_data_entries:
+        weekday_steps = [entry['daily_data']['steps'] for entry in daily_data_entries if entry['datetime'].weekday() < 5]
+        weekend_steps = [entry['daily_data']['steps'] for entry in daily_data_entries if entry['datetime'].weekday() >= 5]
+        weekday_active = [entry['daily_data']['active_time_hours'] for entry in daily_data_entries if entry['datetime'].weekday() < 5]
+        weekend_active = [entry['daily_data']['active_time_hours'] for entry in daily_data_entries if entry['datetime'].weekday() >= 5]
+        
+        if weekday_steps:
+            weekday_steps_avg = sum(weekday_steps) / len(weekday_steps)
+        if weekend_steps:
+            weekend_steps_avg = sum(weekend_steps) / len(weekend_steps)
+        if weekday_active:
+            weekday_active_time_avg = sum(weekday_active) / len(weekday_active)
+        if weekend_active:
+            weekend_active_time_avg = sum(weekend_active) / len(weekend_active)
+
+    # Floors Climbed Analysis
+    avg_floors_climbed = None
+    floors_mood_correlation = None
+    if daily_data_entries:
+        floors_data = [entry['daily_data']['floors_climbed'] for entry in daily_data_entries if entry['daily_data']['floors_climbed'] > 0]
+        if floors_data:
+            avg_floors_climbed = sum(floors_data) / len(floors_data)
+            floors_moods = [entry['rating'] for entry in daily_data_entries if entry['daily_data']['floors_climbed'] > 0]
+            
+            if len(floors_data) > 1:
+                mean_floors = sum(floors_data) / len(floors_data)
+                mean_mood = sum(floors_moods) / len(floors_moods)
+                
+                numerator = sum((f - mean_floors) * (m - mean_mood) for f, m in zip(floors_data, floors_moods))
+                floors_variance = sum((f - mean_floors) ** 2 for f in floors_data)
+                mood_variance = sum((m - mean_mood) ** 2 for m in floors_moods)
+                
+                if floors_variance > 0 and mood_variance > 0:
+                    floors_mood_correlation = numerator / (floors_variance * mood_variance) ** 0.5
+
     # 9. Physical Activity Benefits
     physical_activities = ['sports', 'hockey', 'baseball', 'mma', 'basketball', 'soccer', 'football', 'tennis', 'golf', 'swimming', 'running', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym', 'yoga', 'meditation', 'workout', 'exercise', 'bike', 'walk', 'hike', 'climbing', 'weightlifting', 'pilates', 'dance', 'gym']
     physical_entries = [entry for entry in data if any(activity in entry['activities'] for activity in physical_activities)]
@@ -830,6 +1061,76 @@ def generate_mood_summary(user_id, start_date, end_date):
         else:
             statistics.append({'name': 'Weekend Sleep Pattern', 'description': f'Your sleep duration is consistent between weekdays ({weekday_sleep_avg:.1f}h) and weekends ({weekend_sleep_avg:.1f}h).'})
     
+    # Add daily activity-based insights
+    if avg_daily_steps is not None:
+        statistics.append({'name': 'Average Daily Steps', 'description': f'You averaged {avg_daily_steps:,.0f} steps per day during this period.'})
+    
+    if most_active_day is not None and highest_step_count is not None:
+        statistics.append({'name': 'Most Active Day', 'description': f'Your most active day was {most_active_day} with {highest_step_count:,} steps.'})
+    
+    if steps_mood_correlation is not None:
+        if steps_mood_correlation > 0.3:
+            correlation_desc = "strong positive"
+        elif steps_mood_correlation > 0.1:
+            correlation_desc = "moderate positive"
+        elif steps_mood_correlation < -0.3:
+            correlation_desc = "strong negative"
+        elif steps_mood_correlation < -0.1:
+            correlation_desc = "moderate negative"
+        else:
+            correlation_desc = "weak"
+        statistics.append({'name': 'Steps and Mood Impact', 'description': f'Your daily step count shows a {correlation_desc} correlation with mood (r={steps_mood_correlation:.2f}).'})
+    
+    if avg_active_time is not None:
+        statistics.append({'name': 'Active Time Benefits', 'description': f'You averaged {avg_active_time:.1f} hours of active movement per day.'})
+    
+    if active_time_mood_correlation is not None and active_time_mood_correlation > 0.2:
+        statistics.append({'name': 'Active Time Impact', 'description': f'More active time correlates with better moods (r={active_time_mood_correlation:.2f}).'})
+    
+    if avg_daily_distance_km is not None:
+        statistics.append({'name': 'Daily Distance Traveled', 'description': f'You averaged {avg_daily_distance_km:.1f} km of travel per day.'})
+    
+    if distance_mood_correlation is not None and distance_mood_correlation > 0.2:
+        statistics.append({'name': 'Distance and Mood', 'description': f'Greater daily distance correlates with improved mood (r={distance_mood_correlation:.2f}).'})
+    
+    if avg_stress_level is not None:
+        stress_level_desc = "low" if avg_stress_level < 30 else "moderate" if avg_stress_level < 60 else "high"
+        statistics.append({'name': 'Average Stress Level', 'description': f'Your average stress level was {avg_stress_level:.0f}/100 ({stress_level_desc}).'})
+    
+    if high_stress_days is not None and len(daily_data_entries) > 0:
+        stress_percentage = (high_stress_days / len(daily_data_entries)) * 100
+        statistics.append({'name': 'High Stress Days', 'description': f'You experienced high stress (≥70/100) on {high_stress_days} out of {len(daily_data_entries)} days ({stress_percentage:.0f}%).'})
+    
+    if stress_mood_correlation is not None and stress_mood_correlation < -0.2:
+        statistics.append({'name': 'Stress Impact on Mood', 'description': f'Higher stress levels correlate with lower moods (r={stress_mood_correlation:.2f}).'})
+    
+    if activity_consistency_score is not None:
+        if activity_consistency_score >= 8:
+            consistency_desc = "very consistent"
+        elif activity_consistency_score >= 6:
+            consistency_desc = "fairly consistent"
+        elif activity_consistency_score >= 4:
+            consistency_desc = "somewhat inconsistent"
+        else:
+            consistency_desc = "quite inconsistent"
+        statistics.append({'name': 'Activity Consistency', 'description': f'Your daily activity levels were {consistency_desc} (consistency score: {activity_consistency_score:.1f}/10).'})
+    
+    if weekday_steps_avg is not None and weekend_steps_avg is not None:
+        steps_difference = weekend_steps_avg - weekday_steps_avg
+        if abs(steps_difference) > 1000:
+            if steps_difference > 0:
+                statistics.append({'name': 'Weekend Activity Pattern', 'description': f'You take {steps_difference:,.0f} more steps on weekends ({weekend_steps_avg:,.0f}) than weekdays ({weekday_steps_avg:,.0f}).'})
+            else:
+                statistics.append({'name': 'Weekend Activity Pattern', 'description': f'You take {abs(steps_difference):,.0f} fewer steps on weekends ({weekend_steps_avg:,.0f}) than weekdays ({weekday_steps_avg:,.0f}).'})
+        else:
+            statistics.append({'name': 'Weekend Activity Pattern', 'description': f'Your step count is consistent between weekdays ({weekday_steps_avg:,.0f}) and weekends ({weekend_steps_avg:,.0f}).'})
+    
+    if avg_floors_climbed is not None:
+        statistics.append({'name': 'Floors Climbed', 'description': f'You averaged {avg_floors_climbed:.1f} floors climbed per day.'})
+    
+    if floors_mood_correlation is not None and floors_mood_correlation > 0.2:
+        statistics.append({'name': 'Vertical Activity Benefits', 'description': f'Climbing more floors correlates with better moods (r={floors_mood_correlation:.2f}).'})
+    
     if avg_physical_mood is not None:
         statistics.append({'name': 'Physical Activity Benefits', 'description': f'Engaging in physical activities increased your mood to an average of {avg_physical_mood:.2f}.'})
     if consistency_percentage is not None:
@@ -854,7 +1155,7 @@ def get_openai_insights(moods):
     prompt = """
     Assume today's date is {current_date}.
 
-    You will be given mood data in JSON format for the previous month. This data includes both mood entries and sleep data from Garmin devices. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
+    You will be given mood data in JSON format for the previous month. This data includes mood entries, sleep data, and daily activity data from Garmin devices. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
 
     **Instructions:**
 
@@ -862,19 +1163,19 @@ def get_openai_insights(moods):
     - Answers must be clear, concise, and supported by specific examples or evidence from the data.
     - Do not repeat the questions.
     - Only output JSON, no extra text or explanation.
-    - For each answer, reference at least one relevant date and activity/comment/sleep data from the sample data.
+    - For each answer, reference at least one relevant date and activity/comment/sleep/daily data from the sample data.
     - For predictions, only give positive predictions based on trends you observe.
     - For 'small win', it must be a positive event from the last 7 days, with encouragement to celebrate it.
     - For 'prediction', it must be a positive prediction for the upcoming week, based on recent patterns.
-    - For 'insights', analyze relationships between mood ratings, activities, comments, AND sleep data if available.
-    - For 'trends', look for correlations involving sleep quality, duration, and mood patterns.
+    - For 'insights', analyze relationships between mood ratings, activities, comments, sleep data, AND daily activity data if available.
+    - For 'trends', look for correlations involving sleep quality, duration, physical activity levels, and mood patterns.
 
     **Questions:**
 
-    1. What insights can you find about how comments, activities, sleep data, and mood ratings relate to one another?
-    2. What are the most significant trends or correlations in the data from the past month, including sleep patterns if available?
+    1. What insights can you find about how comments, activities, sleep data, daily activity data, and mood ratings relate to one another?
+    2. What are the most significant trends or correlations in the data from the past month, including sleep and activity patterns if available?
     3. Identify a small win from the past week. Include encouragement to celebrate this.
-    4. Predict one positive thing that might happen with your moods next week, based on recent patterns including sleep if available.
+    4. Predict one positive thing that might happen with your moods next week, based on recent patterns including sleep and activity data if available.
 
     **Data Details:**
     - Mood ratings are on a scale from 0-4 where 0 is the worst mood and 4 is the best mood.
@@ -887,7 +1188,15 @@ def get_openai_insights(moods):
       * rem_sleep_hours: REM sleep phase duration
       * awake_hours: Time spent awake during sleep period
       * start_time_seconds: Sleep start time (Unix timestamp)
-    - Some entries may have only mood data, only sleep data, or both. Analyze accordingly.
+    - Daily activity data (when available) includes:
+      * steps: Number of steps taken during the day
+      * distance_meters: Total distance traveled in meters
+      * active_time_hours: Time spent in active movement in hours
+      * floors_climbed: Number of floors climbed
+      * average_stress_level: Average stress level (0-100 scale)
+      * max_stress_level: Maximum stress level recorded
+      * stress_duration_minutes: Total minutes of elevated stress
+    - Some entries may have only mood data, only sleep/activity data, or combinations. Analyze accordingly.
 
     # Mood Data:
 

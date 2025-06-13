@@ -335,6 +335,38 @@ function initializeDatabase() {
       ON sleep_summaries(garminUserId)
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS daily_summaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        garminUserId TEXT NOT NULL,
+        summaryId TEXT NOT NULL,
+        calendarDate TEXT NOT NULL,
+        steps INTEGER DEFAULT 0,
+        distanceInMeters REAL DEFAULT 0,
+        activeTimeInHours REAL DEFAULT 0,
+        floorsClimbed INTEGER DEFAULT 0,
+        averageStressLevel INTEGER,
+        maxStressLevel INTEGER,
+        stressDurationInMinutes REAL DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id),
+        UNIQUE(userId, calendarDate)
+      )
+    `);
+
+    // Create index for efficient querying
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_date 
+      ON daily_summaries(userId, calendarDate)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_daily_summaries_garmin_user 
+      ON daily_summaries(garminUserId)
+    `);
+
     logger.info('Database tables initialized successfully');
   });
 }

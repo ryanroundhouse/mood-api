@@ -447,4 +447,38 @@ router.get('/sleep', authenticateToken, (req, res) => {
   );
 });
 
+// Get user daily summaries data
+router.get('/daily-summaries', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  db.all(
+    `SELECT calendarDate, steps, distanceInMeters, activeTimeInHours, 
+     floorsClimbed, averageStressLevel, maxStressLevel, stressDurationInMinutes
+     FROM daily_summaries 
+     WHERE userId = ? 
+     ORDER BY calendarDate DESC`,
+    [userId],
+    (err, rows) => {
+      if (err) {
+        logger.error('Error fetching user daily summaries data:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+
+      const dailySummariesData = rows.map(row => ({
+        date: row.calendarDate,
+        steps: row.steps || 0,
+        distanceInMeters: row.distanceInMeters || 0,
+        activeTimeInHours: row.activeTimeInHours || 0,
+        floorsClimbed: row.floorsClimbed || 0,
+        averageStressLevel: row.averageStressLevel,
+        maxStressLevel: row.maxStressLevel,
+        stressDurationInMinutes: row.stressDurationInMinutes || 0
+      }));
+
+      logger.info(`Fetched ${dailySummariesData.length} daily summary entries for user: ${userId}`);
+      res.json(dailySummariesData);
+    }
+  );
+});
+
 module.exports = router;

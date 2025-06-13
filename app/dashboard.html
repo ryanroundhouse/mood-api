@@ -532,6 +532,7 @@
       let activities = [];
       let selectedActivity = null;
       let sleepData = [];
+      let dailySummariesData = [];
 
       // Modify the fetchCustomActivities function
       async function fetchCustomActivities() {
@@ -559,6 +560,21 @@
           return sleepData;
         } catch (error) {
           console.error('Error fetching sleep data:', error);
+          return [];
+        }
+      }
+
+      // Fetch daily summaries data
+      async function fetchDailySummariesData() {
+        try {
+          const response = await authenticatedApiCall(
+            '/api/user/daily-summaries',
+            'GET'
+          );
+          dailySummariesData = response;
+          return dailySummariesData;
+        } catch (error) {
+          console.error('Error fetching daily summaries data:', error);
           return [];
         }
       }
@@ -619,16 +635,17 @@
       // Modify the fetchMoodEntries function
       async function fetchMoodEntries() {
         try {
-          const [moodResponse, activitiesResponse, sleepResponse] = await Promise.all([
+          const [moodResponse, activitiesResponse, sleepResponse, dailySummariesResponse] = await Promise.all([
             authenticatedApiCall('/api/moods', 'GET'),
             fetchCustomActivities(),
             fetchSleepData(),
+            fetchDailySummariesData(),
           ]);
 
           updateActivitiesCombobox(activitiesResponse);
           createActivityButtons();
           preSelectTodayMood(moodResponse);
-          displayCalendar(moodResponse, sleepResponse);
+          displayCalendar(moodResponse, sleepResponse, dailySummariesResponse);
         } catch (error) {
           console.error('Error:', error);
           showAlertBanner(
@@ -656,7 +673,7 @@
         });
       }
 
-      function displayCalendar(moods, sleepDataArray = []) {
+      function displayCalendar(moods, sleepDataArray = [], dailySummariesArray = []) {
         const calendarDiv = document.getElementById('calendar');
         const currentMonth = currentDate.getMonth();
         const currentYear = currentDate.getFullYear();
@@ -712,18 +729,30 @@
           // Find sleep data for this day
           const sleepDataForDay = sleepDataArray.find(s => s.date === dateString);
           
+          // Find daily summaries data for this day
+          const dailySummariesForDay = dailySummariesArray.find(d => d.date === dateString);
+          
           // Create the day content
           let dayContent = `<span>${i}</span>`;
           
+          // Track emoji positions
+          let emojiTop = 2;
+          
           // Add comment emoji positioned in top right if comment exists
           if (mood && mood.comment && mood.comment.trim() !== '') {
-            dayContent += `<span style="position: absolute; top: 2px; right: 2px; font-size: 0.8em;">📖</span>`;
+            dayContent += `<span style="position: absolute; top: ${emojiTop}px; right: 2px; font-size: 0.8em;">📖</span>`;
+            emojiTop += 12;
           }
           
-          // Add sleep emoji positioned in top right (below comment if both exist) if sleep data exists
+          // Add sleep emoji positioned in top right if sleep data exists
           if (sleepDataForDay && sleepDataForDay.totalHours > 0) {
-            const topPosition = (mood && mood.comment && mood.comment.trim() !== '') ? '14px' : '2px';
-            dayContent += `<span style="position: absolute; top: ${topPosition}; right: 2px; font-size: 0.8em;">😴</span>`;
+            dayContent += `<span style="position: absolute; top: ${emojiTop}px; right: 2px; font-size: 0.8em;">😴</span>`;
+            emojiTop += 12;
+          }
+          
+          // Add steps emoji positioned in top right if steps data exists
+          if (dailySummariesForDay && dailySummariesForDay.steps > 0) {
+            dayContent += `<span style="position: absolute; top: ${emojiTop}px; right: 2px; font-size: 0.8em;">🚶</span>`;
           }
           
           dayDiv.innerHTML = dayContent;
@@ -759,6 +788,21 @@
               tooltipContent.push(`Deep: ${sleepDataForDay.deepHours.toFixed(1)}h, REM: ${sleepDataForDay.remHours.toFixed(1)}h`);
             }
             dayDiv.dataset.sleep = JSON.stringify(sleepDataForDay);
+          }
+
+          // Add daily summaries data to tooltip and dataset if available
+          if (dailySummariesForDay) {
+            if (dailySummariesForDay.steps > 0) {
+              tooltipContent.push(`Steps: ${dailySummariesForDay.steps.toLocaleString()}`);
+            }
+            if (dailySummariesForDay.distanceInMeters > 0) {
+              const distanceKm = (dailySummariesForDay.distanceInMeters / 1000).toFixed(1);
+              tooltipContent.push(`Distance: ${distanceKm} km`);
+            }
+            if (dailySummariesForDay.activeTimeInHours > 0) {
+              tooltipContent.push(`Active: ${dailySummariesForDay.activeTimeInHours.toFixed(1)}h`);
+            }
+            dayDiv.dataset.dailySummaries = JSON.stringify(dailySummariesForDay);
           }
 
           // Set the tooltip if we have any content
@@ -975,6 +1019,7 @@
         
         const moodData = JSON.parse(calendarDayElement.dataset.mood || '{}');
         const sleepData = JSON.parse(calendarDayElement.dataset.sleep || '{}');
+        const dailySummariesData = JSON.parse(calendarDayElement.dataset.dailySummaries || '{}');
         
         // Get the day number from the first child span which contains the day number
         const dayNumberSpan = calendarDayElement.querySelector('span:first-child');
@@ -998,10 +1043,20 @@
             sleepInfo = `<p><strong>Sleep:</strong> ${sleepData.totalHours.toFixed(1)} hours</p>`;
           }
           
+          let stepsInfo = '';
+          if (Object.keys(dailySummariesData).length > 0 && dailySummariesData.steps > 0) {
+            stepsInfo = `<p><strong>Steps:</strong> ${dailySummariesData.steps.toLocaleString()}</p>`;
+            if (dailySummariesData.distanceInMeters > 0) {
+              const distanceKm = (dailySummariesData.distanceInMeters / 1000).toFixed(1);
+              stepsInfo += `<p><strong>Distance:</strong> ${distanceKm} km</p>`;
+            }
+          }
+          
           bubble.innerHTML = `
             <span class="mood-bubble-close">&times;</span>
             <h3 class="bubble-title">Submit Mood for ${clickedDate.toDateString()}</h3>
             ${sleepInfo}
+            ${stepsInfo}
             <div class="mood-options">
               <span class="mood-option" data-rating="0">😢</span>
               <span class="mood-option" data-rating="1">😕</span>
@@ -1028,6 +1083,18 @@
             sleepInfo = `<p><strong>Sleep:</strong> ${sleepData.totalHours.toFixed(1)} hours (Deep: ${sleepData.deepHours.toFixed(1)}h, REM: ${sleepData.remHours.toFixed(1)}h)</p>`;
           }
           
+          let stepsInfo = '';
+          if (Object.keys(dailySummariesData).length > 0 && dailySummariesData.steps > 0) {
+            stepsInfo = `<p><strong>Steps:</strong> ${dailySummariesData.steps.toLocaleString()}</p>`;
+            if (dailySummariesData.distanceInMeters > 0) {
+              const distanceKm = (dailySummariesData.distanceInMeters / 1000).toFixed(1);
+              stepsInfo += `<p><strong>Distance:</strong> ${distanceKm} km</p>`;
+            }
+            if (dailySummariesData.activeTimeInHours > 0) {
+              stepsInfo += `<p><strong>Active Time:</strong> ${dailySummariesData.activeTimeInHours.toFixed(1)} hours</p>`;
+            }
+          }
+          
           bubble.innerHTML = `
             <span class="mood-bubble-close">&times;</span>
             <p><strong>Date:</strong> ${clickedDate.toDateString()}</p>
@@ -1035,6 +1102,7 @@
             <p><strong>Comment:</strong> ${moodData.comment}</p>
             <p><strong>Activities:</strong> ${moodData.activities}</p>
             ${sleepInfo}
+            ${stepsInfo}
           `;
         }
 

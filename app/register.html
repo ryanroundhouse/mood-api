@@ -271,6 +271,154 @@
         opacity: 0.7;
         pointer-events: none;
       }
+      
+      /* Verification panel styles */
+      .verification-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        text-align: center;
+        padding: 40px 20px;
+      }
+      
+      .verification-panel .success-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+        display: block;
+      }
+      
+      .verification-panel h2 {
+        color: #4CAF50;
+        margin-bottom: 20px;
+        font-size: 28px;
+        font-weight: 300;
+      }
+      
+      .verification-panel .email-notice {
+        font-size: 18px;
+        margin-bottom: 30px;
+        color: #333;
+        line-height: 1.4;
+      }
+      
+      .verification-panel .email-notice strong {
+        color: #6a89cc;
+        font-weight: 600;
+      }
+      
+      .next-steps-section {
+        background: #f0f8ff;
+        border: 1px solid #4CAF50;
+        border-radius: 8px;
+        padding: 25px;
+        margin: 25px 0;
+        text-align: left;
+      }
+      
+      .next-steps-section h3 {
+        color: #4CAF50;
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 20px;
+      }
+      
+      .next-steps-section ol {
+        color: #555;
+        font-size: 16px;
+        line-height: 1.6;
+      }
+      
+      .next-steps-section ol li {
+        margin-bottom: 8px;
+      }
+      
+      .next-steps-section a {
+        color: #6a89cc;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      
+      .next-steps-section a:hover {
+        text-decoration: underline;
+      }
+      
+      .tip-section {
+        background: #fff3e0;
+        border: 1px solid #ff9800;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+      }
+      
+      .tip-section p {
+        margin: 0;
+        color: #f57c00;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      
+      .tip-section strong {
+        font-weight: 600;
+      }
+      
+      .verification-actions {
+        margin-top: 30px;
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      
+      .primary-action-btn {
+        display: inline-block;
+        background: linear-gradient(135deg, #6a89cc, #b8e994);
+        color: white;
+        padding: 12px 24px;
+        text-decoration: none;
+        border-radius: 25px;
+        font-weight: bold;
+        font-size: 16px;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+      }
+      
+      .primary-action-btn:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+        color: white;
+        text-decoration: none;
+      }
+      
+      .secondary-action-btn {
+        background: transparent;
+        border: 2px solid #6a89cc;
+        color: #6a89cc;
+        padding: 10px 22px;
+        border-radius: 25px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      
+      .secondary-action-btn:hover {
+        background: #6a89cc;
+        color: white;
+      }
+      
+      @media (max-width: 600px) {
+        .verification-actions {
+          flex-direction: column;
+        }
+        
+        .primary-action-btn,
+        .secondary-action-btn {
+          width: 100%;
+          text-align: center;
+        }
+      }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
   </head>
@@ -336,6 +484,32 @@
       </form>
       <div class="login-link">
         <p>Already have an account? <a href="login.html">Login here</a></p>
+      </div>
+      
+      <!-- Verification Panel (hidden by default) -->
+      <div id="verification-panel" class="verification-panel" style="display: none;">
+        <div class="success-icon">✅</div>
+        <h2>Registration Successful!</h2>
+        <p class="email-notice">
+          We've sent a verification email to <strong id="registered-email"></strong>
+        </p>
+        <div class="next-steps-section">
+          <h3>📧 Next Steps:</h3>
+          <ol>
+            <li>Check your email inbox (and spam folder)</li>
+            <li>Click the verification link in the email</li>
+            <li>Return to the <a href="login.html">login page</a> to access your account</li>
+          </ol>
+        </div>
+        <div class="tip-section">
+          <p>
+            <strong>💡 Tip:</strong> If you don't see the email within a few minutes, check your spam folder or contact support.
+          </p>
+        </div>
+        <div class="verification-actions">
+          <a href="login.html" class="primary-action-btn">Go to Login</a>
+          <button onclick="location.reload()" class="secondary-action-btn">Register Another Account</button>
+        </div>
       </div>
     </div>
 
@@ -456,18 +630,31 @@
               }
             );
 
-            showAlertBanner('Registration successful! Please check your email to verify your account.');
+            // Show verification panel instead of redirecting
+            document.getElementById('registerForm').style.display = 'none';
+            document.querySelector('.login-link').style.display = 'none';
+            document.getElementById('registered-email').textContent = email;
+            document.getElementById('verification-panel').style.display = 'block';
             
-            // Add a longer delay for pro accounts to ensure Stripe webhooks complete
-            const redirectDelay = accountType === 'pro' ? 5000 : 3000;
-            showAlertBanner(`Registration successful! ${accountType === 'pro' ? 'Setting up your Pro account... ' : ''}Redirecting to login shortly.`);
+            // Scroll to top to show the verification panel
+            window.scrollTo(0, 0);
             
-            setTimeout(() => {
-              window.location.href = 'login.html';
-            }, redirectDelay);
           } catch (error) {
             console.error('Error:', error);
-            showAlertBanner(error.message || 'An error occurred. Please try again.', true);
+            
+            // Handle different error types with user-friendly messages
+            let userMessage;
+            if (error.message && error.message.includes('400')) {
+              userMessage = 'Registration failed. Please check your information and try again.';
+            } else if (error.message && error.message.includes('409')) {
+              userMessage = 'This email is already registered. Please try logging in instead.';
+            } else if (error.message && error.message.includes('network')) {
+              userMessage = 'Connection error. Please check your internet and try again.';
+            } else {
+              userMessage = 'Registration failed. Please try again later.';
+            }
+            
+            showAlertBanner(userMessage, true);
             
             // Reset loading state
             setButtonLoading(submitButton, false);

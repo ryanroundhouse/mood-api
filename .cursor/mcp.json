@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sqlite": {
+      "command": "mcp-sqlite",
+      "args": [
+        "database.sqlite",
+        "--metadata",
+        "database-metadata.yml"
+      ],
+      "description": "SQLite MCP server for mood-api database with metadata"
+    }
+  }
+} 

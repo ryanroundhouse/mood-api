@@ -1,0 +1,95 @@
+databases:
+  database:
+    tables:
+      users:
+        description: "User accounts with authentication and subscription information"
+        columns:
+          id: "Primary key - unique user identifier"
+          email: "User's email address (unique)"
+          name: "User's display name"
+          isVerified: "Email verification status (0/1)"
+          accountLevel: "Subscription level: basic, pro, or enterprise"
+          stripeCustomerId: "Stripe customer ID for billing"
+          stripeSubscriptionId: "Active Stripe subscription ID"
+          stripeSubscriptionStatus: "Current subscription status"
+          garminConnected: "Whether user has connected Garmin device"
+      
+      moods:
+        description: "Daily mood entries logged by users"
+        columns:
+          id: "Primary key - unique mood entry identifier"
+          userId: "Foreign key to users table"
+          mood: "Mood rating or value"
+          timestamp: "When the mood was logged"
+          notes: "Optional user notes about their mood"
+      
+      user_settings:
+        description: "User preferences and notification settings"
+        columns:
+          id: "Primary key"
+          userId: "Foreign key to users table"
+          notificationTime: "Preferred time for mood reminders"
+          timezone: "User's timezone"
+      
+      refresh_tokens:
+        description: "JWT refresh tokens for authentication"
+        columns:
+          id: "Primary key"
+          userId: "Foreign key to users table"
+          token: "The refresh token value"
+          expiresAt: "When the token expires"
+    
+    queries:
+      user_stats:
+        title: "Get user statistics"
+        description: "Returns total users, verified users, and subscription breakdown"
+        sql: |
+          SELECT 
+            COUNT(*) as total_users,
+            SUM(isVerified) as verified_users,
+            COUNT(CASE WHEN accountLevel = 'pro' THEN 1 END) as pro_users,
+            COUNT(CASE WHEN accountLevel = 'enterprise' THEN 1 END) as enterprise_users,
+            COUNT(CASE WHEN stripeSubscriptionStatus = 'active' THEN 1 END) as active_subscriptions
+          FROM users
+      
+      recent_moods:
+        title: "Get recent mood entries"
+        description: "Returns the most recent mood entries with user information"
+        sql: |
+          SELECT 
+            m.id,
+            u.name,
+            u.email,
+            m.mood,
+            m.timestamp,
+            m.notes
+          FROM moods m
+          JOIN users u ON m.userId = u.id
+          ORDER BY m.timestamp DESC
+          LIMIT 10
+      
+      mood_trends:
+        title: "Analyze mood trends for a user"
+        description: "Get mood statistics for a specific user by ID"
+        sql: |
+          SELECT 
+            COUNT(*) as total_entries,
+            AVG(mood) as average_mood,
+            MIN(mood) as lowest_mood,
+            MAX(mood) as highest_mood,
+            MIN(timestamp) as first_entry,
+            MAX(timestamp) as latest_entry
+          FROM moods 
+          WHERE userId = :user_id
+      
+      subscription_status:
+        title: "Check subscription status"
+        description: "Get overview of all subscription statuses"
+        sql: |
+          SELECT 
+            stripeSubscriptionStatus,
+            COUNT(*) as count
+          FROM users 
+          WHERE stripeSubscriptionStatus IS NOT NULL
+          GROUP BY stripeSubscriptionStatus
+          ORDER BY count DESC 

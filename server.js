@@ -105,6 +105,10 @@ try {
   const googlePlayRoutes = require('./routes/google-play');
   console.log('✓ google-play routes loaded');
   
+  console.log('Loading apple-store routes...');
+  const appleStoreRoutes = require('./routes/apple-store');
+  console.log('✓ apple-store routes loaded');
+  
   console.log('Loading mood routes...');
   const moodRoutes = require('./routes/moods');
   console.log('✓ mood routes loaded');
@@ -172,6 +176,7 @@ try {
   app.use('/api/stripe', stripeRoutes);
   app.use('/api/contact', contactRoutes);
   app.use('/api/google-play', googlePlayRoutes);
+  app.use('/api/apple-store', appleStoreRoutes);
   app.use('/api/garmin', garminRoutes);
   app.use('/api/moods', moodRoutes);
   app.use('/api/mood', moodRoutes);

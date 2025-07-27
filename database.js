@@ -36,6 +36,8 @@ function initializeDatabase() {
       let hasGarminTokenSecret = false;
       let hasGarminUserId = false;
       let hasGarminConnected = false;
+      let hasAppleSubscriptionId = false;
+      let hasSubscriptionExpiresAt = false;
       
       if (Array.isArray(columns)) {
         for (const col of columns) {
@@ -49,6 +51,10 @@ function initializeDatabase() {
             hasGarminUserId = true;
           } else if (col.name === 'garminConnected') {
             hasGarminConnected = true;
+          } else if (col.name === 'appleSubscriptionId') {
+            hasAppleSubscriptionId = true;
+          } else if (col.name === 'subscriptionExpiresAt') {
+            hasSubscriptionExpiresAt = true;
           }
         }
       }
@@ -100,6 +106,26 @@ function initializeDatabase() {
             logger.error('Failed to add garminConnected column:', alterErr);
           } else {
             logger.info('garminConnected column added to users table');
+          }
+        });
+      }
+      
+      if (!hasAppleSubscriptionId) {
+        db.run("ALTER TABLE users ADD COLUMN appleSubscriptionId TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add appleSubscriptionId column:', alterErr);
+          } else {
+            logger.info('appleSubscriptionId column added to users table');
+          }
+        });
+      }
+      
+      if (!hasSubscriptionExpiresAt) {
+        db.run("ALTER TABLE users ADD COLUMN subscriptionExpiresAt TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add subscriptionExpiresAt column:', alterErr);
+          } else {
+            logger.info('subscriptionExpiresAt column added to users table');
           }
         });
       }

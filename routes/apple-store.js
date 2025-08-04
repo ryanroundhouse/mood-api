@@ -116,6 +116,7 @@ router.post(
   [
     body('receiptData').notEmpty().withMessage('Receipt data is required'),
     body('productId').notEmpty().withMessage('Product ID is required'),
+    body('isDebugMode').optional().isBoolean().withMessage('Debug mode must be a boolean'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -128,17 +129,49 @@ router.post(
 
     try {
       const userId = req.user.id;
-      const { receiptData, productId } = req.body;
+      const { receiptData, productId, isDebugMode } = req.body;
+      const debugMode = isDebugMode === 'true' || isDebugMode === true;
 
       // Enhanced logging for incoming request
       logger.info('🔐 [APPLE-VERIFY] Incoming purchase verification request:', {
         userId,
         productId,
+        debugMode,
         receiptDataLength: receiptData?.length,
-        receiptDataPreview: receiptData?.substring(0, 50) + '...',
         userAgent: req.get('User-Agent'),
         ip: req.ip
       });
+      
+      if (debugMode) {
+        logger.info('🧪 [APPLE-VERIFY] Debug mode enabled, skipping Apple validation');
+        
+        // For debug/testing, simulate successful verification but still update user subscription
+        const { accountLevel } = getSubscriptionDetails(productId);
+        const expirationDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+        const mockTransactionId = `debug_test_${Date.now()}`;
+        
+        await updateSubscriptionStatus(
+          mockTransactionId,
+          userId,
+          accountLevel,
+          expirationDate.toISOString()
+        );
+
+        logger.info('🧪 [APPLE-VERIFY] Debug purchase processed successfully:', {
+          userId,
+          productId,
+          accountLevel,
+          expirationDate
+        });
+
+        return res.json({
+          message: 'Debug purchase verified successfully',
+          accountLevel,
+          expirationDate: expirationDate.toISOString(),
+          originalTransactionId: mockTransactionId,
+          isTest: true
+        });
+      }
 
       if (!APPLE_SHARED_SECRET) {
         logger.error('🔑 [APPLE-VERIFY] Apple shared secret not configured');

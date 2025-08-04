@@ -481,4 +481,144 @@ router.get('/daily-summaries', authenticateToken, (req, res) => {
   );
 });
 
+// Delete user account and all associated data
+router.delete('/account', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  
+  logger.info(`Account deletion requested for user: ${userId}`);
+  
+  // Begin transaction to ensure all deletions succeed or fail together
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+    
+    let completedOperations = 0;
+    let errors = [];
+    const totalOperations = 10;
+    
+    function checkCompletion() {
+      completedOperations++;
+      if (completedOperations === totalOperations) {
+        if (errors.length > 0) {
+          logger.error(`Error during account deletion for user ${userId}:`, errors);
+          db.run('ROLLBACK');
+          return res.status(500).json({ 
+            error: 'Failed to delete account. Please try again later.',
+            details: errors
+          });
+        } else {
+          db.run('COMMIT', (commitErr) => {
+            if (commitErr) {
+              logger.error(`Error committing account deletion for user ${userId}:`, commitErr);
+              return res.status(500).json({ error: 'Failed to complete account deletion' });
+            }
+            
+            logger.info(`Account successfully deleted for user: ${userId}`);
+            res.json({ message: 'Account deleted successfully' });
+          });
+        }
+      }
+    }
+    
+    // Delete from custom_activities
+    db.run('DELETE FROM custom_activities WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`custom_activities: ${err.message}`);
+      } else {
+        logger.info(`Deleted custom activities for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from moods
+    db.run('DELETE FROM moods WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`moods: ${err.message}`);
+      } else {
+        logger.info(`Deleted moods for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from user_settings
+    db.run('DELETE FROM user_settings WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`user_settings: ${err.message}`);
+      } else {
+        logger.info(`Deleted user settings for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from daily_summaries
+    db.run('DELETE FROM daily_summaries WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`daily_summaries: ${err.message}`);
+      } else {
+        logger.info(`Deleted daily summaries for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from refresh_tokens
+    db.run('DELETE FROM refresh_tokens WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`refresh_tokens: ${err.message}`);
+      } else {
+        logger.info(`Deleted refresh tokens for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from garmin_request_tokens
+    db.run('DELETE FROM garmin_request_tokens WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`garmin_request_tokens: ${err.message}`);
+      } else {
+        logger.info(`Deleted Garmin request tokens for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from sleep_summaries
+    db.run('DELETE FROM sleep_summaries WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`sleep_summaries: ${err.message}`);
+      } else {
+        logger.info(`Deleted sleep summaries for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from mood_auth_codes
+    db.run('DELETE FROM mood_auth_codes WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`mood_auth_codes: ${err.message}`);
+      } else {
+        logger.info(`Deleted mood auth codes for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from summaries
+    db.run('DELETE FROM summaries WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`summaries: ${err.message}`);
+      } else {
+        logger.info(`Deleted summaries for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+    
+    // Delete from users (this should be last)
+    db.run('DELETE FROM users WHERE id = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`users: ${err.message}`);
+      } else {
+        logger.info(`Deleted user record for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+  });
+});
+
 module.exports = router;

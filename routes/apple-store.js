@@ -116,6 +116,7 @@ router.post(
   [
     body('receiptData').notEmpty().withMessage('Receipt data is required'),
     body('productId').notEmpty().withMessage('Product ID is required'),
+    body('localReceiptData').optional().isString(),
     body('isDebugMode').optional().isBoolean().withMessage('Debug mode must be a boolean'),
   ],
   async (req, res) => {
@@ -129,7 +130,7 @@ router.post(
 
     try {
       const userId = req.user.id;
-      const { receiptData, productId, isDebugMode } = req.body;
+      const { receiptData, localReceiptData, productId, isDebugMode } = req.body;
       const debugMode = isDebugMode === 'true' || isDebugMode === true;
 
       // Enhanced logging for incoming request
@@ -138,8 +139,54 @@ router.post(
         productId,
         debugMode,
         receiptDataLength: receiptData?.length,
+        localReceiptDataLength: localReceiptData?.length,
         userAgent: req.get('User-Agent'),
         ip: req.ip
+      });
+
+      // Normalize and select the best receipt to use (some clients provide both)
+      const normalizeReceipt = (str) =>
+        typeof str === 'string' ? str.replace(/\s+/g, '').trim() : '';
+
+      const isLikelyBase64 = (str) => /^[A-Za-z0-9+/=]+$/.test(str);
+      const canDecodeBase64 = (str) => {
+        try {
+          if (!str || !isLikelyBase64(str)) return false;
+          const buf = Buffer.from(str, 'base64');
+          return buf && buf.length > 0;
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const normalizedServerReceipt = normalizeReceipt(receiptData);
+      const normalizedLocalReceipt = normalizeReceipt(localReceiptData);
+
+      let selectedReceipt = normalizedServerReceipt;
+      let selectedSource = 'serverVerificationData';
+
+      const serverLooksValid = canDecodeBase64(normalizedServerReceipt);
+      const localLooksValid = canDecodeBase64(normalizedLocalReceipt);
+
+      if (!serverLooksValid && localLooksValid) {
+        selectedReceipt = normalizedLocalReceipt;
+        selectedSource = 'localVerificationData';
+      }
+
+      // Heuristic: If the receipt includes dots like a JWS (StoreKit 2 transaction), prefer local/app receipt if available
+      if (normalizedServerReceipt.includes('.')) {
+        logger.info('🧪 [APPLE-VERIFY] Server receipt looks like JWS/transaction token. Will prefer local/app receipt if valid.');
+        if (localLooksValid) {
+          selectedReceipt = normalizedLocalReceipt;
+          selectedSource = 'localVerificationData';
+        }
+      }
+
+      logger.info('🔎 [APPLE-VERIFY] Receipt selection:', {
+        selectedSource,
+        serverLooksValid,
+        localLooksValid,
+        selectedReceiptLength: selectedReceipt?.length,
       });
       
       if (debugMode) {
@@ -184,7 +231,7 @@ router.post(
       let validationResponse;
       try {
         logger.info('🍎 [APPLE-VERIFY] Attempting production validation...');
-        validationResponse = await validateReceipt(receiptData, APPLE_VERIFY_URL_PROD);
+        validationResponse = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_PROD);
         logger.info('🍎 [APPLE-VERIFY] Production validation response:', {
           status: validationResponse.status,
           receiptFound: !!validationResponse.receipt,
@@ -194,12 +241,32 @@ router.post(
         // If receipt is from sandbox, retry with sandbox URL
         if (validationResponse.status === 21007) {
           logger.info('🧪 [APPLE-VERIFY] Sandbox receipt detected, retrying with sandbox URL...');
-          validationResponse = await validateReceipt(receiptData, APPLE_VERIFY_URL_SANDBOX);
+          validationResponse = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
           logger.info('🧪 [APPLE-VERIFY] Sandbox validation response:', {
             status: validationResponse.status,
             receiptFound: !!validationResponse.receipt,
             latestReceiptInfoCount: validationResponse.latest_receipt_info?.length || 0
           });
+        } else if (
+          validationResponse.status !== 0 &&
+          process.env.NODE_ENV !== 'production'
+        ) {
+          // In non-production backend environments, also try sandbox as a safety net
+          // This helps when testing with TestFlight / StoreKit where receipts are sandbox
+          logger.info('🧪 [APPLE-VERIFY] Non-zero production status in non-production env, attempting sandbox fallback...', {
+            prodStatus: validationResponse.status,
+            prodStatusMeaning: getAppleStatusMeaning(validationResponse.status)
+          });
+          const sandboxAttempt = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
+          logger.info('🧪 [APPLE-VERIFY] Sandbox fallback validation response:', {
+            status: sandboxAttempt.status,
+            receiptFound: !!sandboxAttempt.receipt,
+            latestReceiptInfoCount: sandboxAttempt.latest_receipt_info?.length || 0
+          });
+          // Prefer a successful sandbox validation if available
+          if (sandboxAttempt.status === 0) {
+            validationResponse = sandboxAttempt;
+          }
         }
       } catch (error) {
         logger.error('❌ [APPLE-VERIFY] Error during receipt validation:', {
@@ -209,7 +276,21 @@ router.post(
         return res.status(500).json({ error: 'Error validating receipt with Apple' });
       }
 
-      // Check if receipt is valid
+      // Check if receipt is valid; if Apple review scenario returns 21002 on prod, try sandbox once more
+      if (validationResponse.status !== 0) {
+        if (validationResponse.status === 21002) {
+          try {
+            logger.info('🧪 [APPLE-VERIFY] Received 21002. As a last resort, retrying sandbox to handle Apple Review/edge cases...');
+            const retrySandbox = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
+            if (retrySandbox.status === 0) {
+              validationResponse = retrySandbox;
+            }
+          } catch (e) {
+            // ignore; we'll fall through to error response
+          }
+        }
+      }
+
       if (validationResponse.status !== 0) {
         logger.warn('⚠️ [APPLE-VERIFY] Invalid receipt from Apple:', {
           status: validationResponse.status,
@@ -218,7 +299,9 @@ router.post(
           appleStatusMeaning: getAppleStatusMeaning(validationResponse.status)
         });
         return res.status(400).json({ 
-          error: `Invalid receipt. Status: ${validationResponse.status}` 
+          error: `Invalid receipt. Status: ${validationResponse.status}`,
+          status: validationResponse.status,
+          statusMeaning: getAppleStatusMeaning(validationResponse.status)
         });
       }
 

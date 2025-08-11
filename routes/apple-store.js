@@ -9,38 +9,162 @@ const { db } = require('../database');
 const { authenticateToken } = require('../middleware/auth');
 
 // Load Apple Store configuration from .env file
-const APPLE_SHARED_SECRET = process.env.APPLE_SHARED_SECRET;
-const APPLE_VERIFY_URL_PROD = 'https://buy.itunes.apple.com/verifyReceipt';
-const APPLE_VERIFY_URL_SANDBOX = 'https://sandbox.itunes.apple.com/verifyReceipt';
+const APPLE_APP_STORE_SERVER_API_BASE = 'https://api.storekit.itunes.apple.com';
+const APPLE_APP_STORE_SERVER_API_SANDBOX = 'https://api.storekit-sandbox.itunes.apple.com';
 
-// Validate required environment variables
-if (!APPLE_SHARED_SECRET) {
-  logger.error('Missing required environment variable: APPLE_SHARED_SECRET');
-}
+// JWT verification libraries
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
-// Helper function to validate receipt with Apple's servers
-const validateReceipt = async (receiptData, url) => {
+// Cache for Apple's public keys
+let applePublicKeysCache = null;
+let appleKeyCacheExpiry = null;
+
+// Helper function to fetch Apple's public keys for JWT verification
+const fetchApplePublicKeys = async () => {
   try {
-    const response = await axios.post(url, {
-      'receipt-data': receiptData,
-      'password': APPLE_SHARED_SECRET,
-      'exclude-old-transactions': true,
-    }, {
-      timeout: 10000, // 10 second timeout
+    // Check if we have cached keys that are still valid
+    if (applePublicKeysCache && appleKeyCacheExpiry && Date.now() < appleKeyCacheExpiry) {
+      logger.info('🔑 [APPLE-KEYS] Using cached Apple public keys');
+      return applePublicKeysCache;
+    }
+
+    logger.info('🔑 [APPLE-KEYS] Fetching Apple public keys from Apple servers');
+    
+    // Fetch Apple's public keys from their well-known endpoint
+    const response = await axios.get('https://appleid.apple.com/auth/keys', {
+      timeout: 10000,
       headers: {
-        'Content-Type': 'application/json'
+        'Accept': 'application/json'
       }
     });
 
-    return response.data;
+    if (!response.data || !response.data.keys) {
+      throw new Error('Invalid response from Apple keys endpoint');
+    }
+
+    // Cache the keys for 1 hour
+    applePublicKeysCache = response.data.keys;
+    appleKeyCacheExpiry = Date.now() + (60 * 60 * 1000); // 1 hour
+
+    logger.info('🔑 [APPLE-KEYS] Successfully fetched and cached Apple public keys:', {
+      keyCount: response.data.keys.length,
+      cacheExpiryTime: new Date(appleKeyCacheExpiry).toISOString()
+    });
+
+    return applePublicKeysCache;
+
   } catch (error) {
-    logger.error('Error communicating with Apple servers:', {
+    logger.error('❌ [APPLE-KEYS] Error fetching Apple public keys:', {
       error: error.message,
-      url,
       status: error.response?.status,
       data: error.response?.data
     });
-    throw new Error('Failed to communicate with Apple servers');
+    throw new Error('Failed to fetch Apple public keys');
+  }
+};
+
+// Helper function to convert JWK to PEM format
+const jwkToPem = (jwk) => {
+  try {
+    // Convert the JWK to a crypto KeyObject
+    const keyObject = crypto.createPublicKey({
+      key: jwk,
+      format: 'jwk'
+    });
+
+    // Export as PEM
+    return keyObject.export({
+      type: 'spki',
+      format: 'pem'
+    });
+  } catch (error) {
+    logger.error('❌ [APPLE-KEYS] Error converting JWK to PEM:', error);
+    throw new Error('Failed to convert JWK to PEM format');
+  }
+};
+
+// Helper function to verify StoreKit 2 signed transaction
+const verifySignedTransaction = async (signedTransactionInfo, enableSignatureVerification = false) => {
+  try {
+    logger.info('🔐 [APPLE-MODERN] Verifying StoreKit 2 signed transaction');
+    
+    // Decode the JWT without verification first to get header info
+    const decoded = jwt.decode(signedTransactionInfo, { complete: true });
+    
+    if (!decoded) {
+      throw new Error('Invalid JWT format');
+    }
+
+    logger.info('🔍 [APPLE-MODERN] JWT Header:', {
+      algorithm: decoded.header.alg,
+      keyId: decoded.header.kid,
+      type: decoded.header.typ
+    });
+
+    logger.info('🔍 [APPLE-MODERN] JWT Payload preview:', {
+      transactionId: decoded.payload.transactionId,
+      originalTransactionId: decoded.payload.originalTransactionId,
+      productId: decoded.payload.productId,
+      environment: decoded.payload.environment,
+      expiresDate: decoded.payload.expiresDate
+    });
+
+    // Check if we should do signature verification
+    if (!enableSignatureVerification && process.env.NODE_ENV !== 'production') {
+      logger.info('🧪 [APPLE-MODERN] Development mode: Trusting JWT content without signature verification');
+      return decoded.payload;
+    }
+
+    // Handle Xcode testing scenario - these JWTs are not signed by Apple
+    if (decoded.header.keyId === 'Apple_Xcode_Key') {
+      logger.warn('⚠️ [APPLE-MODERN] Detected Xcode test environment - JWT signature cannot be verified');
+      if (process.env.NODE_ENV !== 'production') {
+        logger.info('🧪 [APPLE-MODERN] Allowing Xcode test JWT in development');
+        return decoded.payload;
+      } else {
+        throw new Error('Xcode test JWTs not allowed in production');
+      }
+    }
+
+    // Perform actual JWT signature verification with Apple's public keys
+    logger.info('🔐 [APPLE-MODERN] Performing signature verification with Apple public keys');
+
+    // Fetch Apple's public keys
+    const appleKeys = await fetchApplePublicKeys();
+    
+    // Find the matching key by keyId
+    const keyId = decoded.header.kid;
+    const matchingKey = appleKeys.find(key => key.kid === keyId);
+    
+    if (!matchingKey) {
+      throw new Error(`No matching Apple public key found for keyId: ${keyId}`);
+    }
+
+    logger.info('🔑 [APPLE-MODERN] Found matching Apple public key:', {
+      keyId: matchingKey.kid,
+      keyType: matchingKey.kty,
+      algorithm: matchingKey.alg
+    });
+
+    // Convert JWK to PEM format
+    const publicKeyPem = jwkToPem(matchingKey);
+
+    // Verify the JWT signature
+    const verifiedPayload = jwt.verify(signedTransactionInfo, publicKeyPem, {
+      algorithms: ['ES256'], // Apple uses ES256 for signing
+      clockTolerance: 60 // Allow 60 seconds clock skew
+    });
+
+    logger.info('✅ [APPLE-MODERN] JWT signature verified successfully');
+    return verifiedPayload;
+
+  } catch (error) {
+    logger.error('❌ [APPLE-MODERN] Error verifying signed transaction:', {
+      error: error.message,
+      jwtPreview: signedTransactionInfo?.substring(0, 100) + '...'
+    });
+    throw error;
   }
 };
 
@@ -91,38 +215,21 @@ const getSubscriptionDetails = (productId) => {
   };
 };
 
-// Helper function to explain Apple status codes
-const getAppleStatusMeaning = (status) => {
-  const meanings = {
-    0: 'Receipt is valid',
-    21000: 'The App Store could not read the JSON object you provided',
-    21002: 'The data in the receipt-data property was malformed or missing',
-    21003: 'The receipt could not be authenticated',
-    21004: 'The shared secret you provided does not match the shared secret on file',
-    21005: 'The receipt server is not currently available',
-    21006: 'This receipt is valid but the subscription has expired',
-    21007: 'This receipt is from the sandbox environment',
-    21008: 'This receipt is from the production environment',
-    21010: 'This receipt could not be authorized'
-  };
-  return meanings[status] || `Unknown status code: ${status}`;
-};
+// Apple status codes removed - not needed for StoreKit 2 JWT verification
 
-// Endpoint to verify and process Apple Store purchase
+// Modern endpoint for StoreKit 2 transaction verification
 router.post(
-  '/verify-purchase',
+  '/verify-transaction',
   strictLimiter,
   authenticateToken,
   [
-    body('receiptData').notEmpty().withMessage('Receipt data is required'),
+    body('signedTransactionInfo').notEmpty().withMessage('Signed transaction info is required'),
     body('productId').notEmpty().withMessage('Product ID is required'),
-    body('localReceiptData').optional().isString(),
-    body('isDebugMode').optional().isBoolean().withMessage('Debug mode must be a boolean'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      logger.warn('Validation errors in verify-purchase:', {
+      logger.warn('Validation errors in verify-transaction:', {
         errors: errors.array(),
       });
       return res.status(400).json({ errors: errors.array() });
@@ -130,204 +237,38 @@ router.post(
 
     try {
       const userId = req.user.id;
-      const { receiptData, localReceiptData, productId, isDebugMode } = req.body;
-      const debugMode = isDebugMode === 'true' || isDebugMode === true;
+      const { signedTransactionInfo, productId } = req.body;
+      
+      // Check if signature verification is requested via query parameter
+      const enableSignatureVerification = req.query.verify_signature === 'true';
 
-      // Enhanced logging for incoming request
-      logger.info('🔐 [APPLE-VERIFY] Incoming purchase verification request:', {
+      logger.info('🚀 [APPLE-MODERN] Incoming StoreKit 2 transaction verification:', {
         userId,
         productId,
-        debugMode,
-        receiptDataLength: receiptData?.length,
-        localReceiptDataLength: localReceiptData?.length,
+        jwtLength: signedTransactionInfo?.length,
+        enableSignatureVerification,
         userAgent: req.get('User-Agent'),
         ip: req.ip
       });
 
-      // Normalize and select the best receipt to use (some clients provide both)
-      const normalizeReceipt = (str) =>
-        typeof str === 'string' ? str.replace(/\s+/g, '').trim() : '';
+      // Verify the signed transaction JWT
+      const transactionData = await verifySignedTransaction(signedTransactionInfo, enableSignatureVerification);
 
-      const isLikelyBase64 = (str) => /^[A-Za-z0-9+/=]+$/.test(str);
-      const canDecodeBase64 = (str) => {
-        try {
-          if (!str || !isLikelyBase64(str)) return false;
-          const buf = Buffer.from(str, 'base64');
-          return buf && buf.length > 0;
-        } catch (_) {
-          return false;
-        }
-      };
-
-      const normalizedServerReceipt = normalizeReceipt(receiptData);
-      const normalizedLocalReceipt = normalizeReceipt(localReceiptData);
-
-      let selectedReceipt = normalizedServerReceipt;
-      let selectedSource = 'serverVerificationData';
-
-      const serverLooksValid = canDecodeBase64(normalizedServerReceipt);
-      const localLooksValid = canDecodeBase64(normalizedLocalReceipt);
-
-      if (!serverLooksValid && localLooksValid) {
-        selectedReceipt = normalizedLocalReceipt;
-        selectedSource = 'localVerificationData';
-      }
-
-      // Heuristic: If the receipt includes dots like a JWS (StoreKit 2 transaction), prefer local/app receipt if available
-      if (normalizedServerReceipt.includes('.')) {
-        logger.info('🧪 [APPLE-VERIFY] Server receipt looks like JWS/transaction token. Will prefer local/app receipt if valid.');
-        if (localLooksValid) {
-          selectedReceipt = normalizedLocalReceipt;
-          selectedSource = 'localVerificationData';
-        }
-      }
-
-      logger.info('🔎 [APPLE-VERIFY] Receipt selection:', {
-        selectedSource,
-        serverLooksValid,
-        localLooksValid,
-        selectedReceiptLength: selectedReceipt?.length,
-      });
-      
-      if (debugMode) {
-        logger.info('🧪 [APPLE-VERIFY] Debug mode enabled, skipping Apple validation');
-        
-        // For debug/testing, simulate successful verification but still update user subscription
-        const { accountLevel } = getSubscriptionDetails(productId);
-        const expirationDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-        const mockTransactionId = `debug_test_${Date.now()}`;
-        
-        await updateSubscriptionStatus(
-          mockTransactionId,
-          userId,
-          accountLevel,
-          expirationDate.toISOString()
-        );
-
-        logger.info('🧪 [APPLE-VERIFY] Debug purchase processed successfully:', {
-          userId,
-          productId,
-          accountLevel,
-          expirationDate
+      // Validate product ID matches
+      if (transactionData.productId !== productId) {
+        logger.warn('⚠️ [APPLE-MODERN] Product ID mismatch:', {
+          expected: productId,
+          received: transactionData.productId
         });
-
-        return res.json({
-          message: 'Debug purchase verified successfully',
-          accountLevel,
-          expirationDate: expirationDate.toISOString(),
-          originalTransactionId: mockTransactionId,
-          isTest: true
-        });
-      }
-
-      if (!APPLE_SHARED_SECRET) {
-        logger.error('🔑 [APPLE-VERIFY] Apple shared secret not configured');
-        return res.status(500).json({ error: 'Server configuration error' });
-      }
-
-      logger.info('🔑 [APPLE-VERIFY] Apple shared secret available, proceeding with verification');
-
-      // First try production environment
-      let validationResponse;
-      try {
-        logger.info('🍎 [APPLE-VERIFY] Attempting production validation...');
-        validationResponse = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_PROD);
-        logger.info('🍎 [APPLE-VERIFY] Production validation response:', {
-          status: validationResponse.status,
-          receiptFound: !!validationResponse.receipt,
-          latestReceiptInfoCount: validationResponse.latest_receipt_info?.length || 0
-        });
-        
-        // If receipt is from sandbox, retry with sandbox URL
-        if (validationResponse.status === 21007) {
-          logger.info('🧪 [APPLE-VERIFY] Sandbox receipt detected, retrying with sandbox URL...');
-          validationResponse = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
-          logger.info('🧪 [APPLE-VERIFY] Sandbox validation response:', {
-            status: validationResponse.status,
-            receiptFound: !!validationResponse.receipt,
-            latestReceiptInfoCount: validationResponse.latest_receipt_info?.length || 0
-          });
-        } else if (
-          validationResponse.status !== 0 &&
-          process.env.NODE_ENV !== 'production'
-        ) {
-          // In non-production backend environments, also try sandbox as a safety net
-          // This helps when testing with TestFlight / StoreKit where receipts are sandbox
-          logger.info('🧪 [APPLE-VERIFY] Non-zero production status in non-production env, attempting sandbox fallback...', {
-            prodStatus: validationResponse.status,
-            prodStatusMeaning: getAppleStatusMeaning(validationResponse.status)
-          });
-          const sandboxAttempt = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
-          logger.info('🧪 [APPLE-VERIFY] Sandbox fallback validation response:', {
-            status: sandboxAttempt.status,
-            receiptFound: !!sandboxAttempt.receipt,
-            latestReceiptInfoCount: sandboxAttempt.latest_receipt_info?.length || 0
-          });
-          // Prefer a successful sandbox validation if available
-          if (sandboxAttempt.status === 0) {
-            validationResponse = sandboxAttempt;
-          }
-        }
-      } catch (error) {
-        logger.error('❌ [APPLE-VERIFY] Error during receipt validation:', {
-          error: error.message,
-          stack: error.stack
-        });
-        return res.status(500).json({ error: 'Error validating receipt with Apple' });
-      }
-
-      // Check if receipt is valid; if Apple review scenario returns 21002 on prod, try sandbox once more
-      if (validationResponse.status !== 0) {
-        if (validationResponse.status === 21002) {
-          try {
-            logger.info('🧪 [APPLE-VERIFY] Received 21002. As a last resort, retrying sandbox to handle Apple Review/edge cases...');
-            const retrySandbox = await validateReceipt(selectedReceipt, APPLE_VERIFY_URL_SANDBOX);
-            if (retrySandbox.status === 0) {
-              validationResponse = retrySandbox;
-            }
-          } catch (e) {
-            // ignore; we'll fall through to error response
-          }
-        }
-      }
-
-      if (validationResponse.status !== 0) {
-        logger.warn('⚠️ [APPLE-VERIFY] Invalid receipt from Apple:', {
-          status: validationResponse.status,
-          userId,
-          productId,
-          appleStatusMeaning: getAppleStatusMeaning(validationResponse.status)
-        });
-        return res.status(400).json({ 
-          error: `Invalid receipt. Status: ${validationResponse.status}`,
-          status: validationResponse.status,
-          statusMeaning: getAppleStatusMeaning(validationResponse.status)
-        });
-      }
-
-      // Find the relevant transaction in latest_receipt_info
-      const latestReceiptInfo = validationResponse.latest_receipt_info || [];
-      const relevantTransaction = latestReceiptInfo.find(
-        (transaction) => transaction.product_id === productId
-      );
-
-      if (!relevantTransaction) {
-        logger.warn('Transaction for product not found in receipt:', {
-          productId,
-          userId,
-          availableProducts: latestReceiptInfo.map(t => t.product_id)
-        });
-        return res.status(400).json({ 
-          error: 'Transaction for this product not found in receipt' 
-        });
+        return res.status(400).json({ error: 'Product ID mismatch' });
       }
 
       // Check if subscription is still active
-      const expirationDate = new Date(parseInt(relevantTransaction.expires_date_ms));
+      const expirationDate = new Date(transactionData.expiresDate);
       const now = new Date();
 
       if (expirationDate <= now) {
-        logger.warn('Subscription has expired:', {
+        logger.warn('⚠️ [APPLE-MODERN] Subscription has expired:', {
           userId,
           productId,
           expirationDate,
@@ -341,28 +282,30 @@ router.post(
 
       // Update subscription status in database
       await updateSubscriptionStatus(
-        relevantTransaction.original_transaction_id,
+        transactionData.originalTransactionId,
         userId,
         accountLevel,
         expirationDate.toISOString()
       );
 
-      logger.info('Apple subscription verified successfully:', {
+      logger.info('✅ [APPLE-MODERN] StoreKit 2 subscription verified successfully:', {
         userId,
         productId,
         accountLevel,
-        expirationDate
+        expirationDate,
+        environment: transactionData.environment
       });
 
       res.json({
-        message: 'Purchase verified and processed successfully',
+        message: 'StoreKit 2 transaction verified and processed successfully',
         accountLevel,
         expirationDate: expirationDate.toISOString(),
-        originalTransactionId: relevantTransaction.original_transaction_id,
+        originalTransactionId: transactionData.originalTransactionId,
+        environment: transactionData.environment
       });
 
     } catch (error) {
-      logger.error('Error processing Apple Store purchase:', {
+      logger.error('❌ [APPLE-MODERN] Error processing StoreKit 2 transaction:', {
         error: {
           message: error.message,
           stack: error.stack,
@@ -370,7 +313,7 @@ router.post(
         userId: req.user.id,
         productId: req.body.productId,
       });
-      res.status(500).json({ error: 'Error processing purchase' });
+      res.status(500).json({ error: 'Error processing StoreKit 2 transaction' });
     }
   }
 );
@@ -433,63 +376,213 @@ router.get(
   }
 );
 
-// Endpoint to handle server-to-server notifications from Apple
+// Endpoint to handle server-to-server notifications from Apple (StoreKit 2)
+// Handles subscription lifecycle events like renewals, expirations, refunds, etc.
+// Similar to Google Play Pub/Sub notifications but uses Apple's signed JWT format
 router.post('/webhook', async (req, res) => {
   try {
-    // Apple sends the notification in a specific format
     const notification = req.body;
     
-    if (!notification || !notification.latest_receipt_info) {
-      logger.warn('Invalid Apple webhook notification format');
+    // Log the raw webhook notification for debugging
+    logger.info('🔔 [APPLE-WEBHOOK] StoreKit 2 webhook notification received:', {
+      fullNotification: JSON.stringify(notification, null, 2),
+      headers: req.headers,
+      ip: req.ip
+    });
+    
+    // StoreKit 2 webhook format includes signedPayload
+    if (!notification || !notification.signedPayload) {
+      logger.warn('Invalid StoreKit 2 webhook notification format - missing signedPayload');
       return res.status(200).json({ status: 'invalid_format' });
     }
 
-    // Extract the latest transaction info
-    const latestTransaction = notification.latest_receipt_info;
-    const originalTransactionId = latestTransaction.original_transaction_id;
-    const expirationDate = new Date(parseInt(latestTransaction.expires_date_ms));
-    const now = new Date();
+    try {
+      // Decode the signed payload (JWS)
+      const decodedPayload = jwt.decode(notification.signedPayload, { complete: true });
+      
+      if (!decodedPayload || !decodedPayload.payload) {
+        logger.warn('Could not decode webhook signedPayload');
+        return res.status(200).json({ status: 'invalid_payload' });
+      }
 
-    // Find the user associated with this transaction
-    db.get(
-      `SELECT id, accountLevel FROM users WHERE appleSubscriptionId = ?`,
-      [originalTransactionId],
-      async (err, user) => {
-        if (err || !user) {
-          logger.warn('User not found for Apple webhook notification:', {
-            originalTransactionId: originalTransactionId?.substring(0, 10) + '...',
-            error: err?.message
-          });
-          return res.status(200).json({ status: 'user_not_found' });
-        }
+      logger.info('🔍 [APPLE-WEBHOOK] Decoded webhook payload:', {
+        notificationType: decodedPayload.payload.notificationType,
+        subtype: decodedPayload.payload.subtype,
+        bundleId: decodedPayload.payload.data?.bundleId
+      });
 
-        // Determine new account level based on expiration
-        const newAccountLevel = expirationDate > now ? 'pro' : 'basic';
+      const data = decodedPayload.payload.data;
+      const notificationType = decodedPayload.payload.notificationType;
+      const subtype = decodedPayload.payload.subtype;
 
+      logger.info('🔍 [APPLE-WEBHOOK] Processing webhook notification:', {
+        notificationType,
+        subtype,
+        bundleId: data?.bundleId,
+        environment: data?.environment
+      });
+
+      // Extract transaction information from signedTransactionInfo if present
+      let transactionData = null;
+      if (data?.signedTransactionInfo) {
         try {
-          await updateSubscriptionStatus(
-            originalTransactionId,
-            user.id,
-            newAccountLevel,
-            expirationDate.toISOString()
-          );
-
-          logger.info('Apple webhook processed successfully:', {
-            userId: user.id,
-            originalTransactionId: originalTransactionId?.substring(0, 10) + '...',
-            newAccountLevel,
-            expirationDate
+          const transactionDecoded = jwt.decode(data.signedTransactionInfo, { complete: true });
+          transactionData = transactionDecoded?.payload;
+          
+          logger.info('🔍 [APPLE-WEBHOOK] Transaction data extracted:', {
+            originalTransactionId: transactionData?.originalTransactionId,
+            productId: transactionData?.productId,
+            expiresDate: transactionData?.expiresDate
           });
-
-          res.status(200).json({ status: 'processed' });
-        } catch (updateError) {
-          logger.error('Error updating subscription from Apple webhook:', updateError);
-          res.status(200).json({ status: 'update_failed' });
+        } catch (transactionError) {
+          logger.error('❌ [APPLE-WEBHOOK] Error decoding transaction data:', transactionError);
         }
       }
-    );
+
+      // If we don't have transaction data, try signedRenewalInfo
+      if (!transactionData && data?.signedRenewalInfo) {
+        try {
+          const renewalDecoded = jwt.decode(data.signedRenewalInfo, { complete: true });
+          const renewalData = renewalDecoded?.payload;
+          
+          logger.info('🔍 [APPLE-WEBHOOK] Renewal data extracted:', {
+            originalTransactionId: renewalData?.originalTransactionId,
+            productId: renewalData?.productId,
+            autoRenewStatus: renewalData?.autoRenewStatus
+          });
+          
+          // Use renewal data as fallback
+          transactionData = renewalData;
+        } catch (renewalError) {
+          logger.error('❌ [APPLE-WEBHOOK] Error decoding renewal data:', renewalError);
+        }
+      }
+
+      if (!transactionData || !transactionData.originalTransactionId) {
+        logger.warn('⚠️ [APPLE-WEBHOOK] No valid transaction data found in webhook');
+        return res.status(200).json({ status: 'no_transaction_data' });
+      }
+
+      // Find the user associated with this original transaction ID
+      db.get(
+        `SELECT id, accountLevel FROM users WHERE appleSubscriptionId = ?`,
+        [transactionData.originalTransactionId],
+        async (err, user) => {
+          if (err) {
+            logger.error('❌ [APPLE-WEBHOOK] Database error:', err);
+            return res.status(200).json({ status: 'database_error' });
+          }
+
+          if (!user) {
+            logger.warn('⚠️ [APPLE-WEBHOOK] User not found for transaction:', {
+              originalTransactionId: transactionData.originalTransactionId?.substring(0, 10) + '...'
+            });
+            return res.status(200).json({ status: 'user_not_found' });
+          }
+
+          // Determine new account level based on notification type
+          // Apple StoreKit 2 notification types documentation:
+          // - SUBSCRIBED: Initial subscription purchase
+          // - DID_RENEW: Subscription renewed successfully
+          // - DID_RECOVER: Subscription recovered from billing retry
+          // - EXPIRED: Subscription expired
+          // - DID_FAIL_TO_RENEW: Subscription failed to renew
+          // - GRACE_PERIOD_EXPIRED: Grace period ended (can be active or expired)
+          // - REFUND: Transaction was refunded
+          // - REVOKE: Family sharing revoked access
+          // - DID_CHANGE_RENEWAL_PREF: User changed renewal preference
+          // - DID_CHANGE_RENEWAL_STATUS: Auto-renewal status changed
+          // - PRICE_INCREASE: User consented to price increase
+          
+          let newAccountLevel = user.accountLevel; // Default to current level
+          
+          switch (notificationType) {
+            case 'SUBSCRIBED':
+            case 'DID_RENEW':
+            case 'DID_RECOVER':
+            case 'GRACE_PERIOD_EXPIRED':
+              newAccountLevel = 'pro';
+              break;
+              
+            case 'EXPIRED':
+            case 'DID_FAIL_TO_RENEW':
+            case 'REFUND':
+            case 'REVOKE':
+              newAccountLevel = 'basic';
+              break;
+              
+            case 'DID_CHANGE_RENEWAL_PREF':
+            case 'DID_CHANGE_RENEWAL_STATUS':
+            case 'PRICE_INCREASE':
+              // Keep current level for preference/status changes
+              break;
+              
+            default:
+              logger.info('🔄 [APPLE-WEBHOOK] Unhandled notification type:', {
+                notificationType,
+                subtype
+              });
+              return res.status(200).json({ status: 'unhandled_type' });
+          }
+
+          // Update subscription status if account level changed
+          if (newAccountLevel !== user.accountLevel) {
+            try {
+              // Calculate expiration date if available
+              let expirationDate = null;
+              if (transactionData.expiresDate) {
+                expirationDate = new Date(transactionData.expiresDate).toISOString();
+              }
+
+              await updateSubscriptionStatus(
+                transactionData.originalTransactionId,
+                user.id,
+                newAccountLevel,
+                expirationDate
+              );
+
+              logger.info('✅ [APPLE-WEBHOOK] Subscription status updated:', {
+                userId: user.id,
+                originalTransactionId: transactionData.originalTransactionId?.substring(0, 10) + '...',
+                oldLevel: user.accountLevel,
+                newLevel: newAccountLevel,
+                notificationType,
+                expirationDate
+              });
+
+              res.status(200).json({ 
+                status: 'processed',
+                accountLevelChanged: true,
+                oldLevel: user.accountLevel,
+                newLevel: newAccountLevel
+              });
+
+            } catch (updateError) {
+              logger.error('❌ [APPLE-WEBHOOK] Error updating subscription status:', updateError);
+              res.status(200).json({ status: 'update_failed' });
+            }
+          } else {
+            logger.info('📊 [APPLE-WEBHOOK] No account level change needed:', {
+              userId: user.id,
+              currentLevel: user.accountLevel,
+              notificationType
+            });
+            res.status(200).json({ 
+              status: 'acknowledged',
+              accountLevelChanged: false,
+              currentLevel: user.accountLevel
+            });
+          }
+        }
+      );
+
+    } catch (jwtError) {
+      logger.error('Error decoding webhook JWT:', jwtError);
+      res.status(200).json({ status: 'jwt_decode_error' });
+    }
+
   } catch (error) {
-    logger.error('Error processing Apple webhook:', error);
+    logger.error('Error processing StoreKit 2 webhook:', error);
     res.status(200).json({ status: 'error' });
   }
 });

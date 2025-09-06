@@ -153,6 +153,24 @@
         transform: scale(1.05);
       }
 
+      .app-store-badge {
+        height: 60px;
+        width: auto;
+        transition: transform 0.2s ease;
+        margin-left: 1rem;
+      }
+
+      .app-store-badge:hover {
+        transform: scale(1.05);
+      }
+
+      .download-badges {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
       @media (max-width: 768px) {
         .app-content {
           flex-direction: column-reverse;
@@ -203,22 +221,30 @@
       <div class="app-content">
         <div class="app-text">
           <h2>Take Moodful Everywhere!</h2>
-          <p class="app-tagline">Track your moods on the go with our new Android app</p>
+          <p class="app-tagline">Track your moods on the go with our mobile apps</p>
           <ul class="app-features">
             <li>✨ Daily mood tracking with customizable tags</li>
             <li>🎯 Advanced AI-powered weekly insights</li>
             <li>📊 Beautiful mood visualization</li>
             <li>🎨 Multiple emoji sets to choose from</li>
           </ul>
-          <a href="https://play.google.com/store/apps/details?id=com.gencorp.moodful_app" 
-             class="download-button" 
-             target="_blank"
-             rel="noopener noreferrer">
-            <img src="img/google-play-badge.png" alt="Get it on Google Play" class="play-store-badge">
-          </a>
+          <div class="download-badges">
+            <a href="https://apps.apple.com/app/id6747648486" 
+               class="download-button" 
+               target="_blank"
+               rel="noopener noreferrer">
+              <img src="img/app-store-badge.svg" alt="Download on the App Store" class="app-store-badge">
+            </a>
+            <a href="https://play.google.com/store/apps/details?id=com.gencorp.moodful_app" 
+               class="download-button" 
+               target="_blank"
+               rel="noopener noreferrer">
+              <img src="img/google-play-badge.png" alt="Get it on Google Play" class="play-store-badge">
+            </a>
+          </div>
         </div>
         <div class="app-image">
-          <img src="img/app-preview.png" alt="Moodful Android App Preview" class="phone-mockup">
+          <img src="img/app-preview.png" alt="Moodful Mobile App Preview" class="phone-mockup">
         </div>
       </div>
     </section>

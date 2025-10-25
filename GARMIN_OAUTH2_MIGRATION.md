@@ -38,20 +38,20 @@ This document outlines the migration strategy from OAuth 1.0a to OAuth 2.0 for t
 - [ ] Prepare code changes for OAuth 2.0 support
 
 ### Phase 2: Request Migration (Contact Garmin)
-- [ ] Email `connect-support@developer.garmin.com` with:
+- [x] Email `connect-support@developer.garmin.com` with:
   - Consumer Key(s): `GARMIN_CONSUMER_KEY` from environment
   - Confirm webhook URLs are ready for new PING structure
   - Request migration to OAuth 2.0
-- [ ] Wait for confirmation from Garmin support
+- [x] Wait for confirmation from Garmin support
 - [ ] Retrieve new OAuth 2.0 secret from developer portal
 
 ### Phase 3: Implementation (After Garmin Enables OAuth 2.0)
-- [ ] Update database schema for OAuth 2.0 tokens
-- [ ] Implement OAuth 2.0 authorization flow (new users)
-- [ ] Implement token exchange for existing users
-- [ ] Update API request methods to use Bearer tokens
-- [ ] Implement token refresh logic
-- [ ] Update webhook handlers for new PING structure
+- [x] Update database schema for OAuth 2.0 tokens
+- [ ] Implement OAuth 2.0 authorization flow (new users) - *Optional for now*
+- [x] Implement token exchange for existing users
+- [x] Update API request methods to use Bearer tokens
+- [x] Implement token refresh logic
+- [ ] Update webhook handlers for new PING structure - *Will auto-handle after migration*
 - [ ] Test with development/staging users
 
 ### Phase 4: Migration & Monitoring

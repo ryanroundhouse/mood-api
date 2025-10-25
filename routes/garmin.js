@@ -11,7 +11,7 @@ const { strictLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 const { db } = require('../database');
 
-// Garmin Connect OAuth endpoints
+// Garmin Connect OAuth 1.0 endpoints
 const GARMIN_REQUEST_TOKEN_URL = 'https://connectapi.garmin.com/oauth-service/oauth/request_token';
 const GARMIN_AUTHORIZE_URL = 'https://connect.garmin.com/oauthConfirm';
 const GARMIN_ACCESS_TOKEN_URL = 'https://connectapi.garmin.com/oauth-service/oauth/access_token';
@@ -19,9 +19,16 @@ const GARMIN_USER_ID_URL = 'https://apis.garmin.com/wellness-api/rest/user/id';
 const GARMIN_BACKFILL_SLEEP_URL = 'https://apis.garmin.com/wellness-api/rest/backfill/sleeps';
 const GARMIN_BACKFILL_DAILIES_URL = 'https://apis.garmin.com/wellness-api/rest/backfill/dailies';
 
+// Garmin Connect OAuth 2.0 endpoints
+const GARMIN_OAUTH2_AUTHORIZE_URL = 'https://connect.garmin.com/oauthConfirm';
+const GARMIN_OAUTH2_TOKEN_URL = 'https://connectapi.garmin.com/oauth-service/oauth/token';
+const GARMIN_TOKEN_EXCHANGE_URL = 'https://apis.garmin.com/partner-gateway/rest/user/token-exchange';
+
 // OAuth configuration from environment variables
 const GARMIN_CONSUMER_KEY = process.env.GARMIN_CONSUMER_KEY;
 const GARMIN_CONSUMER_SECRET = process.env.GARMIN_CONSUMER_SECRET;
+const GARMIN_OAUTH2_CLIENT_ID = process.env.GARMIN_CONSUMER_KEY; // Same as consumer key
+const GARMIN_OAUTH2_CLIENT_SECRET = process.env.GARMIN_OAUTH2_CLIENT_SECRET;
 const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
 
 // OAuth 1.0a helper functions
@@ -119,6 +126,132 @@ function makeOAuthRequest(method, url, params, tokenSecret = '') {
       'Content-Type': 'application/x-www-form-urlencoded'
     }
   });
+}
+
+// OAuth 2.0 helper functions
+
+// Helper function to get user by ID with promisified db.get
+function getUserById(userId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(user);
+      }
+    });
+  });
+}
+
+// Refresh OAuth 2.0 access token
+async function refreshGarminAccessToken(userId) {
+  try {
+    const user = await getUserById(userId);
+    
+    if (!user || !user.garminRefreshToken) {
+      throw new Error('No refresh token available');
+    }
+    
+    logger.info(`Refreshing Garmin OAuth 2.0 token for user ${userId}`);
+    
+    const response = await fetch(GARMIN_OAUTH2_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${GARMIN_OAUTH2_CLIENT_ID}:${GARMIN_OAUTH2_CLIENT_SECRET}`).toString('base64')}`
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: user.garminRefreshToken
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Failed to refresh token: ${errorText}`);
+      throw new Error('Failed to refresh token');
+    }
+    
+    const tokens = await response.json();
+    
+    // Update database with new tokens
+    await new Promise((resolve, reject) => {
+      db.run(`
+        UPDATE users 
+        SET garminAccessTokenV2 = ?,
+            garminTokenExpiry = ?
+        WHERE id = ?
+      `, [
+        tokens.access_token,
+        Date.now() + (tokens.expires_in * 1000),
+        userId
+      ], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    logger.info(`✓ Successfully refreshed OAuth 2.0 token for user ${userId}`);
+    return tokens.access_token;
+  } catch (error) {
+    logger.error(`Error refreshing token for user ${userId}:`, error);
+    throw error;
+  }
+}
+
+// Get valid OAuth 2.0 access token (refreshing if needed)
+async function getValidAccessToken(userId) {
+  const user = await getUserById(userId);
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  // Check if using OAuth 2.0
+  if (user.garminOAuthVersion === 'v2') {
+    // Check if token is expired or about to expire (5 min buffer)
+    if (!user.garminTokenExpiry || user.garminTokenExpiry < Date.now() + 300000) {
+      logger.info(`Token expired or expiring soon for user ${userId}, refreshing...`);
+      return await refreshGarminAccessToken(userId);
+    }
+    return user.garminAccessTokenV2;
+  } else {
+    // Still using OAuth 1.0 - return existing token
+    return user.garminAccessToken;
+  }
+}
+
+// Make API request with support for both OAuth 1.0 and 2.0
+async function makeGarminApiRequest(method, url, userId, params = {}) {
+  const user = await getUserById(userId);
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  if (user.garminOAuthVersion === 'v2') {
+    // OAuth 2.0: Use Bearer token
+    const accessToken = await getValidAccessToken(userId);
+    
+    const queryString = new URLSearchParams(params).toString();
+    const fullUrl = queryString ? `${url}?${queryString}` : url;
+    
+    logger.info(`Making OAuth 2.0 request: ${method} ${fullUrl}`);
+    
+    return fetch(fullUrl, {
+      method: method,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  } else {
+    // OAuth 1.0: Use existing signature-based method
+    return makeOAuthRequest(method, url, {
+      oauth_token: user.garminAccessToken,
+      ...params
+    }, user.garminTokenSecret);
+  }
 }
 
 // Function to request sleep data backfill for the last 30 days
@@ -458,7 +591,7 @@ router.get('/status', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT garminConnected, garminUserId FROM users WHERE id = ?`,
+    `SELECT garminConnected, garminUserId, garminOAuthVersion FROM users WHERE id = ?`,
     [userId],
     (err, user) => {
       if (err) {
@@ -468,10 +601,103 @@ router.get('/status', authenticateToken, (req, res) => {
 
       res.json({
         connected: !!user?.garminConnected,
-        garminUserId: user?.garminUserId || null
+        garminUserId: user?.garminUserId || null,
+        oauthVersion: user?.garminOAuthVersion || 'v1'
       });
     }
   );
+});
+
+// Token exchange endpoint - migrate OAuth 1.0 users to OAuth 2.0
+router.post('/migrate-to-oauth2', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  
+  try {
+    logger.info(`Starting OAuth 2.0 migration for user ${userId}`);
+    
+    // Get user's OAuth 1.0 credentials
+    const user = await getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Check if already migrated
+    if (user.garminOAuthVersion === 'v2') {
+      logger.info(`User ${userId} already migrated to OAuth 2.0`);
+      return res.json({ 
+        success: true, 
+        message: 'Already using OAuth 2.0',
+        alreadyMigrated: true 
+      });
+    }
+    
+    // Check if OAuth 1.0 credentials exist
+    if (!user.garminAccessToken || !user.garminTokenSecret) {
+      return res.status(400).json({ 
+        error: 'No OAuth 1.0 credentials found. Please connect your Garmin account first.' 
+      });
+    }
+    
+    // Check if OAuth 2.0 credentials are configured
+    if (!GARMIN_OAUTH2_CLIENT_SECRET) {
+      logger.error('OAuth 2.0 client secret not configured');
+      return res.status(500).json({ 
+        error: 'OAuth 2.0 migration not yet configured on server' 
+      });
+    }
+    
+    // Call Garmin token exchange endpoint (must be signed with OAuth 1.0)
+    logger.info(`Calling token exchange endpoint for user ${userId}`);
+    const response = await makeOAuthRequest('POST', GARMIN_TOKEN_EXCHANGE_URL, {
+      oauth_token: user.garminAccessToken
+    }, user.garminTokenSecret);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Token exchange failed for user ${userId}:`, errorText);
+      return res.status(500).json({ 
+        error: 'Failed to exchange token with Garmin',
+        details: errorText 
+      });
+    }
+    
+    const oauth2Tokens = await response.json();
+    logger.info(`✓ Received OAuth 2.0 tokens for user ${userId}`);
+    
+    // Store OAuth 2.0 tokens in database
+    await new Promise((resolve, reject) => {
+      db.run(`
+        UPDATE users 
+        SET garminAccessTokenV2 = ?,
+            garminRefreshToken = ?,
+            garminTokenExpiry = ?,
+            garminOAuthVersion = 'v2'
+        WHERE id = ?
+      `, [
+        oauth2Tokens.access_token,
+        oauth2Tokens.refresh_token,
+        Date.now() + (oauth2Tokens.expires_in * 1000),
+        userId
+      ], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    
+    logger.info(`✅ Successfully migrated user ${userId} to OAuth 2.0`);
+    res.json({ 
+      success: true, 
+      message: 'Successfully migrated to OAuth 2.0',
+      oauthVersion: 'v2'
+    });
+  } catch (error) {
+    logger.error(`Error migrating user ${userId} to OAuth 2.0:`, error);
+    res.status(500).json({ 
+      error: 'Error during OAuth 2.0 migration',
+      message: error.message 
+    });
+  }
 });
 
 // Helper function to store sleep summary in database

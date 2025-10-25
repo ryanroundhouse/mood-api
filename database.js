@@ -38,6 +38,10 @@ function initializeDatabase() {
       let hasGarminConnected = false;
       let hasAppleSubscriptionId = false;
       let hasSubscriptionExpiresAt = false;
+      let hasGarminAccessTokenV2 = false;
+      let hasGarminRefreshToken = false;
+      let hasGarminTokenExpiry = false;
+      let hasGarminOAuthVersion = false;
       
       if (Array.isArray(columns)) {
         for (const col of columns) {
@@ -55,6 +59,14 @@ function initializeDatabase() {
             hasAppleSubscriptionId = true;
           } else if (col.name === 'subscriptionExpiresAt') {
             hasSubscriptionExpiresAt = true;
+          } else if (col.name === 'garminAccessTokenV2') {
+            hasGarminAccessTokenV2 = true;
+          } else if (col.name === 'garminRefreshToken') {
+            hasGarminRefreshToken = true;
+          } else if (col.name === 'garminTokenExpiry') {
+            hasGarminTokenExpiry = true;
+          } else if (col.name === 'garminOAuthVersion') {
+            hasGarminOAuthVersion = true;
           }
         }
       }
@@ -126,6 +138,47 @@ function initializeDatabase() {
             logger.error('Failed to add subscriptionExpiresAt column:', alterErr);
           } else {
             logger.info('subscriptionExpiresAt column added to users table');
+          }
+        });
+      }
+      
+      // OAuth 2.0 migration columns
+      if (!hasGarminAccessTokenV2) {
+        db.run("ALTER TABLE users ADD COLUMN garminAccessTokenV2 TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminAccessTokenV2 column:', alterErr);
+          } else {
+            logger.info('garminAccessTokenV2 column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminRefreshToken) {
+        db.run("ALTER TABLE users ADD COLUMN garminRefreshToken TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminRefreshToken column:', alterErr);
+          } else {
+            logger.info('garminRefreshToken column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminTokenExpiry) {
+        db.run("ALTER TABLE users ADD COLUMN garminTokenExpiry INTEGER", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminTokenExpiry column:', alterErr);
+          } else {
+            logger.info('garminTokenExpiry column added to users table');
+          }
+        });
+      }
+      
+      if (!hasGarminOAuthVersion) {
+        db.run("ALTER TABLE users ADD COLUMN garminOAuthVersion TEXT DEFAULT 'v1'", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add garminOAuthVersion column:', alterErr);
+          } else {
+            logger.info('garminOAuthVersion column added to users table');
           }
         });
       }

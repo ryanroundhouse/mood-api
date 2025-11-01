@@ -526,6 +526,49 @@ router.get('/callback', async (req, res) => {
 
               logger.info(`✅ Successfully connected Garmin account for user ${tokenData.userId}`);
               
+              // Automatically migrate new user to OAuth 2.0 immediately after connection
+              if (GARMIN_OAUTH2_CLIENT_SECRET) {
+                logger.info(`🔄 Auto-migrating new user ${tokenData.userId} to OAuth 2.0`);
+                makeOAuthRequest('POST', GARMIN_TOKEN_EXCHANGE_URL, {
+                  oauth_token: accessTokenData.oauth_token
+                }, accessTokenData.oauth_token_secret)
+                  .then(async (exchangeResponse) => {
+                    if (exchangeResponse.ok) {
+                      const oauth2Tokens = await exchangeResponse.json();
+                      logger.info(`✓ Received OAuth 2.0 tokens for new user ${tokenData.userId}`);
+                      
+                      // Update user to OAuth 2.0
+                      db.run(`
+                        UPDATE users 
+                        SET garminAccessTokenV2 = ?,
+                            garminRefreshToken = ?,
+                            garminTokenExpiry = ?,
+                            garminOAuthVersion = 'v2'
+                        WHERE id = ?
+                      `, [
+                        oauth2Tokens.access_token,
+                        oauth2Tokens.refresh_token,
+                        Date.now() + (oauth2Tokens.expires_in * 1000),
+                        tokenData.userId
+                      ], (err) => {
+                        if (err) {
+                          logger.error(`Error storing OAuth 2.0 tokens for user ${tokenData.userId}:`, err);
+                        } else {
+                          logger.info(`✅ Auto-migrated new user ${tokenData.userId} to OAuth 2.0`);
+                        }
+                      });
+                    } else {
+                      const errorText = await exchangeResponse.text();
+                      logger.warn(`Failed to auto-migrate new user ${tokenData.userId} to OAuth 2.0: ${errorText}. User will remain on OAuth 1.0 and can migrate manually.`);
+                    }
+                  })
+                  .catch((error) => {
+                    logger.error(`Error auto-migrating new user ${tokenData.userId} to OAuth 2.0:`, error);
+                  });
+              } else {
+                logger.warn(`OAuth 2.0 client secret not configured. New user ${tokenData.userId} will use OAuth 1.0 until migration is run.`);
+              }
+              
               // Automatically request sleep data backfill for the last 30 days
               requestSleepBackfill(accessTokenData.oauth_token, accessTokenData.oauth_token_secret)
                 .then((success) => {

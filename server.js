@@ -134,6 +134,34 @@ try {
   // Trust proxy settings (add this before other middleware)
   app.set('trust proxy', 1);
 
+  // CORS configuration
+  // - Dev: allow all origins
+  // - Prod: allow only known site origins (plus requests with no Origin, e.g. curl/health checks)
+  const allowedOrigins = [
+    'https://moodful.ca',
+    'https://blog.graham.pub',
+    'https://ryangraham.ca',
+    'https://www.ryangraham.ca',
+    // Common local dev origins (optional in prod; harmless since Origin must match)
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ];
+
+  const corsOptions = {
+    origin: (origin, callback) => {
+      if (isDevelopment) return callback(null, true);
+      if (!origin) return callback(null, true); // non-browser or same-origin without Origin header
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    optionsSuccessStatus: 204,
+  };
+
+  app.use(cors(corsOptions));
+  app.options('*', cors(corsOptions));
+
   // Special handling for Stripe webhooks - must use raw body parser
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
   
@@ -146,23 +174,6 @@ try {
   // Standard middleware for all other routes
   app.use(express.json({ limit: '2mb' }));  // Increase default limit from 100kb to 2mb
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
-
-  // CORS configuration
-  if (isDevelopment) {
-    app.use(cors());
-    app.use((req, res, next) => {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header(
-        'Access-Control-Allow-Methods',
-        'GET, POST, PUT, DELETE, OPTIONS'
-      );
-      res.header(
-        'Access-Control-Allow-Headers',
-        'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-      );
-      next();
-    });
-  }
 
   // Rate limiting
   if (!isDevelopment) {

@@ -32,11 +32,23 @@ router.post(
         `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${recaptchaToken}`
       );
 
+      const minScore = Number.parseFloat(process.env.RECAPTCHA_MIN_SCORE || '0.5');
+      const score = typeof recaptchaResponse.data?.score === 'number' ? recaptchaResponse.data.score : -1;
+
       if (
         !recaptchaResponse.data.success ||
-        recaptchaResponse.data.score < 0.5
+        score < minScore
       ) {
-        logger.warn(`reCAPTCHA verification failed for ${email}`);
+        logger.warn('reCAPTCHA verification failed', {
+          email,
+          origin: req.headers.origin,
+          success: recaptchaResponse.data?.success,
+          score: recaptchaResponse.data?.score,
+          action: recaptchaResponse.data?.action,
+          hostname: recaptchaResponse.data?.hostname,
+          errorCodes: recaptchaResponse.data?.['error-codes'],
+          minScore,
+        });
         return res.status(400).json({ error: 'reCAPTCHA verification failed' });
       }
     } catch (error) {

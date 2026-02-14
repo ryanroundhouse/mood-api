@@ -306,7 +306,24 @@ function generatePasswordResetEmail({ userName, resetLink, expiryMinutes, baseUr
     typeof expiryMinutes === 'number' && expiryMinutes > 0
       ? expiryMinutes
       : 60;
-  const logoUrl = `${baseUrl}/img/logo.png`;
+
+  // Email clients (e.g. Gmail) can't fetch localhost images. Ensure assets use a
+  // publicly reachable https origin, even if the API is running locally.
+  function resolvePublicAssetOrigin(rawBaseUrl) {
+    try {
+      const url = new URL(rawBaseUrl);
+      const isLocalhost =
+        url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      const isHttps = url.protocol === 'https:';
+      if (isLocalhost || !isHttps) return 'https://moodful.ca';
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      return 'https://moodful.ca';
+    }
+  }
+
+  const assetOrigin = resolvePublicAssetOrigin(baseUrl);
+  const logoUrl = `${assetOrigin}/img/logo.png`;
 
   const subject = '🔑 Reset your Moodful password';
 

@@ -100,7 +100,8 @@ test('forgot-password sends branded HTML + text reset email', async () => {
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
   process.env.NOREPLY_EMAIL = 'noreply@moodful.ca';
-  process.env.MOOD_SITE_URL = 'https://moodful.ca';
+  // Use localhost to simulate dev/test sending; logo must still be public https.
+  process.env.MOOD_SITE_URL = 'http://localhost:3000';
 
   const fakeDb = makeFakeDb();
   fakeDb.seedUser({ id: 1, email: 'ryan@example.com', name: 'Ryan' });
@@ -132,7 +133,7 @@ test('forgot-password sends branded HTML + text reset email', async () => {
 
     const { token } = fakeDb._getLastReset();
     assert.ok(token, 'expected reset token to be stored');
-    const resetLink = `https://moodful.ca/reset.html?token=${token}`;
+    const resetLink = `http://localhost:3000/reset.html?token=${token}`;
 
     assert.equal(msg.subject, '🔑 Reset your Moodful password');
     assert.equal(msg.to, 'ryan@example.com');
@@ -147,7 +148,7 @@ test('forgot-password sends branded HTML + text reset email', async () => {
     assert.ok(msg.html.includes('class="cta-button"'));
     assert.ok(msg.html.includes('Reset password'));
     assert.ok(msg.html.includes(resetLink));
-    assert.ok(msg.html.includes('/img/logo.png'));
+    assert.ok(msg.html.includes('https://moodful.ca/img/logo.png'));
     assert.ok(msg.html.toLowerCase().includes("didn't request"));
   } finally {
     await server.close();

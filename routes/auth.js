@@ -382,11 +382,6 @@ Sent on ${currentDate}
                 width: auto;
                 border-radius: 6px;
             }
-            .brand .name {
-                font-size: 1.2em;
-                font-weight: 600;
-                letter-spacing: 0.2px;
-            }
             .header h1 {
                 margin: 0;
                 font-size: 2.0em;
@@ -489,7 +484,6 @@ Sent on ${currentDate}
             <div class="header">
                 <div class="brand">
                     <img src="${logoUrl}" alt="Moodful logo" />
-                    <div class="name">Moodful</div>
                 </div>
                 <h1>Reset your password</h1>
                 <p>Use the button below to set a new one</p>

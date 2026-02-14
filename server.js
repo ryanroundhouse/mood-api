@@ -60,6 +60,8 @@ console.log('Loading modules...');
 try {
   const express = require('express');
   console.log('✓ express loaded');
+  const cookieParser = require('cookie-parser');
+  console.log('✓ cookie-parser loaded');
   const cors = require('cors');
   console.log('✓ cors loaded');
   const path = require('path');
@@ -121,7 +123,10 @@ try {
   // Security: avoid framework fingerprinting
   app.disable('x-powered-by');
   const port = 3000;
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  // Treat anything other than explicit "production" as development-like.
+  // This avoids accidentally enabling production-only middleware (rate limiting, strict CORS)
+  // when NODE_ENV is set to values like "sandbox", "staging", etc.
+  const isDevelopment = process.env.NODE_ENV !== 'production';
 
   console.log('Initializing database...');
   // Initialize database
@@ -164,6 +169,9 @@ try {
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
 
+  // Parse Cookie header so routes can read HttpOnly refresh cookies
+  app.use(cookieParser());
+
   // Special handling for Stripe webhooks - must use raw body parser
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
   
@@ -179,12 +187,24 @@ try {
 
   // Rate limiting
   if (!isDevelopment) {
-    app.use(generalLimiter);
+    // Only rate-limit API endpoints (never static assets like /login.html, /api-script.js)
+    app.use('/api', generalLimiter);
   }
 
   console.log('Setting up routes...');
-  app.use('/api', authRoutes);
+  // Deprecation signaling for legacy auth endpoints under /api/*
+  // Canonical non-cookie auth prefix is /api/auth/*
+  const {
+    createLegacyApiAuthDeprecationMiddleware,
+  } = require('./middleware/legacyAuthDeprecation');
+  const legacyApiAuthDeprecation = createLegacyApiAuthDeprecationMiddleware({
+    logger,
+  });
+
+  app.use('/api', legacyApiAuthDeprecation, authRoutes);
   app.use('/api/auth', authRoutes);
+  // Web-only cookie-based auth endpoints (kept separate so mobile can keep using /api/auth/* JSON tokens)
+  app.use('/api/web-auth', authRoutes);
   app.use('/api/user', userRoutes);
   app.use('/api/stripe', stripeRoutes);
   app.use('/api/contact', contactRoutes);

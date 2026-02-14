@@ -319,20 +319,23 @@
       </ul>
     </footer>
 
-    <script>
-      // Check if user is logged in
-      (function () {
-        const accessToken = localStorage.getItem('accessToken');
-        const refreshToken = localStorage.getItem('refreshToken');
+    <script type="module">
+      import { ensureAccessToken } from './api-script.js';
 
-        // If we have both tokens, update the UI to show logged-in state
-        if (accessToken && refreshToken) {
-          // For example, change the "Login" button to "Dashboard"
+      // Check if user is logged in (cookie-based). We can't read HttpOnly cookies,
+      // so we attempt a refresh call and update the UI if it succeeds.
+      (async function () {
+        try {
+          const token = await ensureAccessToken();
+          if (!token) return;
+
           const loginButton = document.querySelector('a[href="login.html"]');
           if (loginButton) {
             loginButton.href = 'dashboard.html';
             loginButton.textContent = 'Dashboard';
           }
+        } catch {
+          // Not logged in; keep default UI
         }
       })();
 

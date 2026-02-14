@@ -243,6 +243,7 @@
       import {
         authenticatedApiCall,
         unauthenticatedApiCall,
+        ensureAccessToken,
       } from './api-script.js';
 
       // Add this function to show temporary alert banners
@@ -258,9 +259,12 @@
       }
 
       // Check if user is logged in
-      const accessToken = localStorage.getItem('accessToken');
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (!accessToken || !refreshToken) {
+      try {
+        const token = await ensureAccessToken();
+        if (!token) {
+          window.location.href = 'login.html';
+        }
+      } catch {
         window.location.href = 'login.html';
       }
 
@@ -269,13 +273,12 @@
         .getElementById('logoutBtn')
         .addEventListener('click', async () => {
           try {
-            await unauthenticatedApiCall('/api/logout', 'POST', {
-              refreshToken,
-            });
+            await unauthenticatedApiCall('/api/web-auth/logout', 'POST');
           } catch (error) {
             console.error('Logout error:', error);
             showAlertBanner('Error during logout. Please try again.', true);
           } finally {
+            // Migration cleanup: ensure no tokens remain in localStorage
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             window.location.href = 'index.html';

@@ -35,6 +35,12 @@
 - Do not commit secrets or production data (`.env`, `*.sqlite`, key files are ignored).
 - Preserve webhook parsing requirements (Stripe/Garmin raw-body routes configured in `server.js`).
 - Prefer tests that don’t require real third-party credentials; mock/stub external APIs.
+- Web auth uses an HttpOnly refresh cookie under `/api/web-auth/*`; the static site should not persist auth tokens in `localStorage`.
+
+## Auth endpoint prefixes (migration in progress)
+- **`/api/web-auth/*`**: Web-only cookie-based auth (refresh token in HttpOnly cookie).
+- **`/api/auth/*`**: Canonical non-cookie auth endpoints (mobile + web register/forgot/reset flows).
+- **`/api/*`**: Legacy non-cookie auth endpoints (deprecated; still mounted for backwards compatibility during rollout).
 
 ## Current file tree (top-level)
 ```

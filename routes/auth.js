@@ -8,7 +8,6 @@ const { DateTime } = require('luxon');
 const { v4: uuidv4 } = require('uuid');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { db } = require('../database');
-const { authenticateToken } = require('../middleware/auth');
 const { strictLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 const transporter = require('../utils/mailer');
@@ -16,6 +15,43 @@ const transporter = require('../utils/mailer');
 const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
 const JWT_SECRET = process.env.JWT_SECRET;
 const NOREPLY_EMAIL = process.env.NOREPLY_EMAIL;
+
+const WEB_AUTH_BASE_URL = '/api/web-auth';
+const REFRESH_COOKIE_NAME = 'refreshToken';
+
+function isWebAuthRequest(req) {
+  return req.baseUrl === WEB_AUTH_BASE_URL;
+}
+
+function getRefreshCookieOptions() {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  return {
+    httpOnly: true,
+    secure: !isDevelopment,
+    sameSite: 'lax',
+    // Limit cookie to web-auth endpoints only
+    path: WEB_AUTH_BASE_URL,
+    // 30 days (match DB refresh token expiry)
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  };
+}
+
+function readRefreshToken(req) {
+  if (isWebAuthRequest(req)) {
+    return req.cookies && req.cookies[REFRESH_COOKIE_NAME];
+  }
+  return req.body && req.body.refreshToken;
+}
+
+function clearRefreshCookie(res) {
+  // clearCookie must match cookie attributes (especially path)
+  const opts = getRefreshCookieOptions();
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    path: opts.path,
+    sameSite: opts.sameSite,
+    secure: opts.secure,
+  });
+}
 
 // Function to generate styled verification email HTML
 function generateVerificationEmail(userName, verificationLink) {
@@ -370,8 +406,9 @@ router.post(
             }
           );
 
-                    // Send verification email
-          const verificationLink = `${BASE_URL}/api/verify/${verificationToken}`;
+          // Send verification email
+          // Canonical verification endpoint is /api/auth/verify/:token
+          const verificationLink = `${BASE_URL}/api/auth/verify/${verificationToken}`;
           try {
             const emailHtml = generateVerificationEmail(name, verificationLink);
             transporter.sendMail({
@@ -448,7 +485,14 @@ router.post('/login', strictLimiter, async (req, res) => {
         }
 
         logger.info(`User logged in successfully: ${email}`);
-        res.json({ accessToken, refreshToken });
+        if (isWebAuthRequest(req)) {
+          res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
+          // Web mode: do not expose refresh token to JS
+          res.json({ accessToken });
+        } else {
+          // Legacy/API mode: preserve existing JSON contract
+          res.json({ accessToken, refreshToken });
+        }
       }
     );
   });
@@ -457,6 +501,12 @@ router.post('/login', strictLimiter, async (req, res) => {
 // Verify email endpoint
 router.get('/verify/:token', (req, res) => {
   const { token } = req.params;
+
+  // During the migration window, keep legacy /api/verify/:token working by redirecting
+  // to the canonical /api/auth/verify/:token.
+  if (req.baseUrl === '/api') {
+    return res.redirect(302, `/api/auth/verify/${encodeURIComponent(token)}`);
+  }
 
   db.get(
     `SELECT * FROM users WHERE verificationToken = ?`,
@@ -577,7 +627,7 @@ router.post('/reset-password/:token', strictLimiter, (req, res) => {
 
 // Refresh token endpoint
 router.post('/refresh-token', async (req, res) => {
-  const { refreshToken } = req.body;
+  const refreshToken = readRefreshToken(req);
 
   if (!refreshToken) {
     return res.status(400).json({ error: 'Refresh token is required' });
@@ -626,8 +676,8 @@ router.post('/refresh-token', async (req, res) => {
 });
 
 // Logout endpoint
-router.post('/logout', authenticateToken, (req, res) => {
-  const refreshToken = req.body.refreshToken;
+router.post('/logout', (req, res) => {
+  const refreshToken = readRefreshToken(req);
 
   if (!refreshToken) {
     return res.status(400).json({ error: 'Refresh token is required' });
@@ -642,7 +692,10 @@ router.post('/logout', authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Internal server error' });
       }
 
-      logger.info(`User logged out successfully: ${req.user.id}`);
+      if (isWebAuthRequest(req)) {
+        clearRefreshCookie(res);
+      }
+      logger.info('User logged out successfully (refresh token revoked)');
       res.json({ message: 'Logged out successfully' });
     }
   );

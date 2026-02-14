@@ -283,12 +283,13 @@
           const password = document.getElementById('password').value;
 
           try {
-            const data = await unauthenticatedApiCall('/api/login', 'POST', {
+            await unauthenticatedApiCall('/api/web-auth/login', 'POST', {
               email,
               password,
             });
-            localStorage.setItem('accessToken', data.accessToken);
-            localStorage.setItem('refreshToken', data.refreshToken);
+            // Migration cleanup: ensure no tokens remain in localStorage
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
             window.location.href = 'dashboard.html'; // Redirect to dashboard
           } catch (error) {
             if (

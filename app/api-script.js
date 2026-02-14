@@ -1,12 +1,46 @@
-async function authenticatedApiCall(
-  url,
-  method = 'GET',
-  body = null,
-  headers = {}
-) {
+let accessToken = null;
+
+function clearAuthState() {
+  accessToken = null;
+}
+
+async function refreshAccessToken() {
+  try {
+    const response = await fetch('/api/web-auth/refresh-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      accessToken = data.accessToken;
+      return accessToken;
+    }
+
+    // Not logged in (or refresh expired)
+    return null;
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    return null;
+  }
+}
+
+async function ensureAccessToken() {
+  if (accessToken) return accessToken;
+  return await refreshAccessToken();
+}
+
+async function authenticatedApiCall(url, method = 'GET', body = null, headers = {}) {
+  const token = await ensureAccessToken();
+  if (!token) {
+    const err = new Error('Not authenticated');
+    err.code = 'NOT_AUTHENTICATED';
+    throw err;
+  }
+
   const baseHeaders = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+    Authorization: `Bearer ${token}`,
     ...headers,
   };
 
@@ -31,6 +65,7 @@ async function authenticatedApiCall(
         });
         return await handleResponse(retryResponse);
       } else {
+        clearAuthState();
         throw new Error('Unable to refresh access token');
       }
     }
@@ -39,34 +74,6 @@ async function authenticatedApiCall(
   } catch (error) {
     console.error('API call failed:', error);
     throw error;
-  }
-}
-
-async function refreshAccessToken() {
-  const refreshToken = localStorage.getItem('refreshToken');
-  if (!refreshToken) {
-    console.error('No refresh token available');
-    return null;
-  }
-
-  try {
-    const response = await fetch('/api/refresh-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      localStorage.setItem('accessToken', data.accessToken);
-      return data.accessToken;
-    } else {
-      console.error('Failed to refresh token');
-      return null;
-    }
-  } catch (error) {
-    console.error('Error refreshing token:', error);
-    return null;
   }
 }
 
@@ -106,5 +113,9 @@ async function unauthenticatedApiCall(
   }
 }
 
-// Update the export statement to include the new function
-export { authenticatedApiCall, unauthenticatedApiCall };
+export {
+  authenticatedApiCall,
+  unauthenticatedApiCall,
+  ensureAccessToken,
+  clearAuthState,
+};

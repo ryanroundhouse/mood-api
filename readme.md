@@ -105,7 +105,7 @@ Possible errors:
 
 ### User login
 
-- **POST** `/api/login`
+- **POST** `/api/login` (legacy JSON-token flow; for non-browser clients)
 
 Request:
 
@@ -131,9 +131,36 @@ Possible errors:
 - 400: Please verify your email before logging in
 - 500: Error logging in
 
+### User login (web cookie flow)
+
+- **POST** `/api/web-auth/login`
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword123"
+}
+```
+
+Response:
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+Notes:
+- Sets an **HttpOnly** refresh cookie (`refreshToken`) scoped to `Path=/api/web-auth` (JS cannot read it).
+- The web app should not persist tokens in `localStorage`.
+
 ### Refresh access token
 
-- **POST** `/api/auth/refresh-token`
+#### Legacy JSON-token flow
+
+- **POST** `/api/refresh-token`
 
 Request:
 
@@ -158,9 +185,16 @@ Possible errors:
 - 401: User not found
 - 500: Internal server error
 
+#### Web cookie flow
+
+- **POST** `/api/web-auth/refresh-token`
+- **No request body** (uses the HttpOnly `refreshToken` cookie)
+
 ### User logout
 
-- **POST** `/api/auth/logout`
+#### Legacy JSON-token flow
+
+- **POST** `/api/logout`
 
 Request:
 
@@ -182,6 +216,15 @@ Possible errors:
 
 - 400: Refresh token is required
 - 500: Internal server error
+
+#### Web cookie flow
+
+- **POST** `/api/web-auth/logout`
+- **No request body** (uses the HttpOnly `refreshToken` cookie and clears it)
+
+#### Backwards-compat note (mobile client)
+
+The mobile app currently uses legacy JSON refresh tokens but calls `/api/auth/refresh-token` and `/api/auth/logout` with a JSON body containing `refreshToken`. These endpoints remain available because the auth router is mounted at both `/api/*` and `/api/auth/*`.
 
 ### Create/update a mood entry
 

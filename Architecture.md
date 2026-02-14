@@ -252,11 +252,20 @@ sequenceDiagram
   API->>DB: UPDATE users.isVerified=1
   API-->>Client: 302 redirect to /verified.html
 
-  Client->>API: POST /api/login
+  Client->>API: POST /api/login (legacy JSON-token flow)
   API->>DB: SELECT users; INSERT refresh_tokens
   API-->>Client: {accessToken, refreshToken}
 
-  Client->>API: POST /api/refresh-token
+  Client->>API: POST /api/refresh-token (legacy JSON-token flow)
+  API->>DB: SELECT refresh_tokens; SELECT users
+  API-->>Client: {accessToken}
+
+  Client->>API: POST /api/web-auth/login (web cookie flow)
+  API->>DB: SELECT users; INSERT refresh_tokens
+  API-->>Client: Set-Cookie refreshToken=...;HttpOnly;SameSite=Lax;Path=/api/web-auth
+  API-->>Client: {accessToken}
+
+  Client->>API: POST /api/web-auth/refresh-token (Cookie refreshToken=...)
   API->>DB: SELECT refresh_tokens; SELECT users
   API-->>Client: {accessToken}
 ```

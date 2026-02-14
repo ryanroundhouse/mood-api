@@ -294,6 +294,246 @@ function generateVerificationEmail(userName, verificationLink) {
   `;
 }
 
+function generatePasswordResetEmail({ userName, resetLink, expiryMinutes, baseUrl }) {
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const greeting = userName ? `Hello ${userName},` : 'Hello,';
+  const safeExpiryMinutes =
+    typeof expiryMinutes === 'number' && expiryMinutes > 0
+      ? expiryMinutes
+      : 60;
+
+  // Email clients (e.g. Gmail) can't fetch localhost images. Ensure assets use a
+  // publicly reachable https origin, even if the API is running locally.
+  function resolvePublicAssetOrigin(rawBaseUrl) {
+    try {
+      const url = new URL(rawBaseUrl);
+      const isLocalhost =
+        url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      const isHttps = url.protocol === 'https:';
+      if (isLocalhost || !isHttps) return 'https://moodful.ca';
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      return 'https://moodful.ca';
+    }
+  }
+
+  const assetOrigin = resolvePublicAssetOrigin(baseUrl);
+  const logoUrl = `${assetOrigin}/img/logo.png`;
+
+  const subject = '🔑 Reset your Moodful password';
+
+  const text = `${greeting}
+
+We received a request to reset the password for your Moodful account.
+
+Reset your password:
+${resetLink}
+
+This link expires in ${safeExpiryMinutes} minutes. If you didn't request this, you can safely ignore this email.
+
+— The Moodful Team
+Sent on ${currentDate}
+`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reset your password - Moodful</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                margin: 0;
+                padding: 20px;
+                background-color: #f8f9fa;
+                color: #333;
+            }
+            .container {
+                max-width: 700px;
+                margin: 0 auto;
+                background-color: white;
+                border-radius: 10px;
+                box-shadow: 0 0 20px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 36px 40px;
+                text-align: center;
+            }
+            .brand {
+                display: inline-flex;
+                align-items: center;
+                gap: 12px;
+                justify-content: center;
+                margin-bottom: 14px;
+            }
+            .brand img {
+                height: 36px;
+                width: auto;
+                border-radius: 6px;
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 2.0em;
+                font-weight: 300;
+            }
+            .header p {
+                margin: 10px 0 0 0;
+                font-size: 1.05em;
+                opacity: 0.92;
+            }
+            .content {
+                padding: 40px;
+            }
+            .greeting {
+                font-size: 1.1em;
+                margin-bottom: 18px;
+                color: #2c3e50;
+            }
+            .reset-highlight {
+                background: #f8f9fa;
+                border-left: 4px solid #667eea;
+                padding: 24px;
+                margin: 22px 0;
+                border-radius: 0 8px 8px 0;
+            }
+            .reset-highlight h3 {
+                color: #667eea;
+                margin-top: 0;
+                font-size: 1.25em;
+            }
+            .cta-button {
+                display: inline-block;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white !important;
+                padding: 14px 28px;
+                text-decoration: none !important;
+                border-radius: 25px;
+                font-weight: bold;
+                margin: 14px 0 6px 0;
+                transition: transform 0.2s;
+                font-size: 1.05em;
+            }
+            .cta-button:hover {
+                transform: translateY(-2px);
+                color: white !important;
+                text-decoration: none !important;
+            }
+            .cta-button:visited {
+                color: white !important;
+                text-decoration: none !important;
+            }
+            .cta-button:active {
+                color: white !important;
+                text-decoration: none !important;
+            }
+            .link-backup {
+                background: #ffffff;
+                border: 1px solid #dee2e6;
+                padding: 12px;
+                margin: 12px 0 0 0;
+                border-radius: 6px;
+                font-size: 0.9em;
+                word-break: break-all;
+            }
+            .note {
+                margin-top: 14px;
+                font-size: 0.95em;
+                color: #555;
+            }
+            .security-note {
+                background: #e8f5e8;
+                border: 1px solid #28a745;
+                padding: 18px;
+                margin: 22px 0;
+                border-radius: 8px;
+                text-align: left;
+            }
+            .security-note strong {
+                color: #28a745;
+            }
+            .footer {
+                background: #f8f9fa;
+                padding: 26px 30px;
+                text-align: center;
+                color: #6c757d;
+                border-top: 1px solid #dee2e6;
+                font-size: 0.9em;
+            }
+            .footer a {
+                color: #667eea;
+                text-decoration: none;
+            }
+            .footer a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="brand">
+                    <img src="${logoUrl}" alt="Moodful logo" />
+                </div>
+                <h1>Reset your password</h1>
+                <p>Use the button below to set a new one</p>
+            </div>
+            
+            <div class="content">
+                <div class="greeting">${greeting}</div>
+                
+                <p>We received a request to reset the password for your Moodful account.</p>
+                
+                <div class="reset-highlight">
+                    <h3>🔐 Reset your password</h3>
+                    <p>Click the button below to choose a new password.</p>
+                    <a href="${resetLink}" class="cta-button">Reset password</a>
+                    <div class="note">This link expires in <strong>${safeExpiryMinutes} minutes</strong>.</div>
+                    
+                    <p class="note" style="margin-top: 16px;">
+                        If the button doesn't work, copy and paste this link into your browser:
+                    </p>
+                    <div class="link-backup">${resetLink}</div>
+                </div>
+                
+                <div class="security-note">
+                    <strong>🛡️ Didn't request this?</strong><br />
+                    If you didn't request a password reset, you can safely ignore this email. Your password will not change unless you use the link above.
+                </div>
+                
+                <p style="margin-top: 28px;">
+                    — <strong>The Moodful Team</strong>
+                </p>
+            </div>
+            
+            <div class="footer">
+                <p>
+                    <a href="https://moodful.ca">Moodful.ca</a> |
+                    <a href="https://moodful.ca/contact.html">Contact Us</a> |
+                    <a href="https://moodful.ca/privacy.html">Privacy Policy</a>
+                </p>
+                <p style="margin-top: 12px; font-size: 0.8em; color: #999;">
+                    Sent on ${currentDate} | Moodful Password Reset
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+  `;
+
+  return { subject, text, html };
+}
+
 // Register endpoint
 router.post(
   '/register',
@@ -572,12 +812,30 @@ router.post('/forgot-password', strictLimiter, (req, res) => {
         }
 
         const resetLink = `${BASE_URL}/reset.html?token=${resetToken}`;
-        transporter.sendMail({
-          from: NOREPLY_EMAIL,
-          to: email,
-          subject: 'Password Reset',
-          html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a>`,
-        });
+        try {
+          const resetEmail = generatePasswordResetEmail({
+            userName: user.name,
+            resetLink,
+            expiryMinutes: 60,
+            baseUrl: BASE_URL,
+          });
+          transporter.sendMail({
+            from: NOREPLY_EMAIL,
+            to: email,
+            subject: resetEmail.subject,
+            text: resetEmail.text,
+            html: resetEmail.html,
+          });
+        } catch (emailError) {
+          logger.error('Error generating password reset email:', emailError);
+          transporter.sendMail({
+            from: NOREPLY_EMAIL,
+            to: email,
+            subject: 'Password Reset',
+            text: `Reset your password: ${resetLink}\n\nThis link expires in 60 minutes.\n\nIf you didn't request this, you can ignore this email.\n`,
+            html: `Please click this link to reset your password: <a href="${resetLink}">${resetLink}</a><br/><br/>This link expires in 60 minutes.<br/><br/>If you didn't request this, you can ignore this email.`,
+          });
+        }
 
         logger.info(`Password reset email sent to: ${email}`);
         res.json({ message: 'Password reset email sent' });

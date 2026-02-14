@@ -3,6 +3,7 @@
 - **API runtime**: Node.js + Express (`server.js`, port **3000**)
 - **Datastores**: SQLite (`database.sqlite`, `analytics.sqlite`)
 - **Testing (Node)**: Node built-in **`node:test`** via `npm test`
+- **Email UX**: Auth emails are HTML-first; password reset emails include a branded HTML template + plain-text fallback (`routes/auth.js`)
 - **Last updated**: 2026-02-14
 
 ## How to run

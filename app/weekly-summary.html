@@ -136,24 +136,6 @@
         }
       }
 
-      /* Add these new styles for the alert banner */
-      .alert-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: #4caf50;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        z-index: 1000;
-        display: none;
-      }
-
-      .alert-banner.error {
-        background-color: #f44336;
-      }
-
       .date-selector {
         max-width: 800px;
         margin: 20px auto;
@@ -179,7 +161,6 @@
   </head>
   <body>
     <header>
-      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"
         ><img src="img/logo.png" alt="Moodful Logo" class="logo"
       /></a>
@@ -245,18 +226,7 @@
         unauthenticatedApiCall,
         ensureAccessToken,
       } from './api-script.js';
-
-      // Add this function to show temporary alert banners
-      function showAlertBanner(message, isError = false) {
-        const banner = document.getElementById('alertBanner');
-        banner.textContent = message;
-        banner.classList.toggle('error', isError);
-        banner.style.display = 'block';
-
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
-      }
+      import { showToast } from './toast.mjs';
 
       // Check if user is logged in
       try {
@@ -276,7 +246,9 @@
             await unauthenticatedApiCall('/api/web-auth/logout', 'POST');
           } catch (error) {
             console.error('Logout error:', error);
-            showAlertBanner('Error during logout. Please try again.', true);
+            showToast('Error during logout. Please try again.', {
+              variant: 'error',
+            });
           } finally {
             // Migration cleanup: ensure no tokens remain in localStorage
             localStorage.removeItem('accessToken');
@@ -301,10 +273,9 @@
           }
         } catch (error) {
           console.error('Error:', error);
-          showAlertBanner(
-            'Failed to fetch weekly summary. Please try again.',
-            true
-          );
+          showToast('Failed to fetch weekly summary. Please try again.', {
+            variant: 'error',
+          });
         }
       }
 

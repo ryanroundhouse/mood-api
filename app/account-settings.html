@@ -255,24 +255,6 @@
         margin-left: 70px;
       }
 
-      /* Add these new styles for the alert banner */
-      .alert-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: #4caf50;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        z-index: 1000;
-        display: none;
-      }
-
-      .alert-banner.error {
-        background-color: #f44336;
-      }
-
       /* Add these new styles for subscription details */
       .subscription-info {
         background-color: #f8f9fa;
@@ -587,7 +569,6 @@
   </head>
   <body>
     <header>
-      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"
         ><img src="img/logo.png" alt="Moodful Logo" class="logo"
       /></a>
@@ -748,6 +729,7 @@
         unauthenticatedApiCall,
         ensureAccessToken,
       } from './api-script.js';
+      import { showToast } from './toast.mjs';
 
       // Add this configuration object at the beginning of your script
       const config = {
@@ -871,14 +853,7 @@
       
       // Add this function to show temporary alert banners
       function showAlertBanner(message, isError = false) {
-        const banner = document.getElementById('alertBanner');
-        banner.textContent = message;
-        banner.classList.toggle('error', isError);
-        banner.style.display = 'block';
-
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
+        showToast(message, { variant: isError ? 'error' : 'success' });
       }
 
       // Fetch subscription details and update the UI

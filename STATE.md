@@ -24,6 +24,7 @@
   - `database.js` (primary DB schema/migrations)
   - `analytics.js` (analytics DB schema + tracking)
 - **`app/`**: static site served by Express
+- **`app/toast.mjs`**: shared toast notifications for the static site (used instead of the old fixed header banner)
 - **`routes/`**: API routers (auth, moods, user, stripe, google-play, apple-store, garmin, contact)
 - **`middleware/`**: auth + rate limiting
 - **`utils/`**: encryption, mailer, datetime, logger

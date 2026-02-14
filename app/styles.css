@@ -171,3 +171,89 @@ footer ul li a {
 footer ul li a:hover {
   color: #5a79bc;
 }
+
+/* Toast notifications (success/error/info) */
+.toast-container {
+  position: fixed;
+  top: 72px; /* below header/logo so it never blocks nav */
+  right: 12px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none; /* don't block page clicks */
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #333;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  border-left: 4px solid #6a89cc;
+  animation: toastIn 180ms ease-out;
+}
+
+.toast--success {
+  border-left-color: #2e7d32;
+}
+
+.toast--error {
+  border-left-color: #c62828;
+}
+
+.toast--info {
+  border-left-color: #1565c0;
+}
+
+.toast__message {
+  font-size: 0.95rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.toast__close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.toast__close:hover {
+  color: #111;
+}
+
+.toast--hide {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 160ms ease-in, transform 160ms ease-in;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .toast--hide {
+    transition: none;
+  }
+}

@@ -130,30 +130,11 @@
         margin-bottom: 15px;
         font-style: italic;
       }
-
-      /* Add these new styles for the alert banner */
-      .alert-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: #4CAF50;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        z-index: 1000;
-        display: none;
-      }
-
-      .alert-banner.error {
-        background-color: #f44336;
-      }
     </style>
     <script src="https://www.google.com/recaptcha/api.js?render=6LemNFYqAAAAAOLKr63x6MWvHsrL9oJWUTkllXdW"></script>
   </head>
   <body>
     <header>
-      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -213,18 +194,7 @@
 
     <script type="module">
       import { unauthenticatedApiCall } from './api-script.js';
-
-      // Add this function to show temporary alert banners
-      function showAlertBanner(message, isError = false) {
-        const banner = document.getElementById('alertBanner');
-        banner.textContent = message;
-        banner.classList.toggle('error', isError);
-        banner.style.display = 'block';
-
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
-      }
+      import { showToast } from './toast.mjs';
 
       document
         .getElementById('contactForm')
@@ -256,11 +226,13 @@
               }
             );
 
-            showAlertBanner('Message sent successfully!');
+            showToast('Message sent successfully!', { variant: 'success' });
             document.getElementById('contactForm').reset();
           } catch (error) {
             console.error('Error sending message:', error);
-            showAlertBanner('An error occurred. Please try again.', true);
+            showToast('An error occurred. Please try again.', {
+              variant: 'error',
+            });
           }
         });
 

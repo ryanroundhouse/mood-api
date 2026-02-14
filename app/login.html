@@ -175,28 +175,10 @@
         }
       }
 
-      /* Add these new styles for the alert banner */
-      .alert-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: #4CAF50;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        z-index: 1000;
-        display: none;
-      }
-
-      .alert-banner.error {
-        background-color: #f44336;
-      }
     </style>
   </head>
   <body>
     <header>
-      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"><img src="img/logo.png" alt="Moodful Logo" class="logo"></a>
       <nav>
         <div class="hamburger-menu">
@@ -250,25 +232,16 @@
 
     <script type="module">
       import { unauthenticatedApiCall } from './api-script.js';
-
-      // Add this function to show temporary alert banners
-      function showAlertBanner(message, isError = false) {
-        const banner = document.getElementById('alertBanner');
-        banner.textContent = message;
-        banner.classList.toggle('error', isError);
-        banner.style.display = 'block';
-
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
-      }
+      import { showToast } from './toast.mjs';
 
       // Add this function at the beginning of the script
       function checkEmailVerification() {
         const urlParams = new URLSearchParams(window.location.search);
         const verified = urlParams.get('verified');
         if (verified === 'true') {
-          showAlertBanner('Thanks for verifying your email address. Please login now.');
+          showToast('Thanks for verifying your email address. Please login now.', {
+            variant: 'success',
+          });
         }
       }
 
@@ -295,12 +268,14 @@
             if (
               error.message === 'Please verify your email before logging in'
             ) {
-              showAlertBanner(
+              showToast(
                 'Please verify your email before logging in. Check your inbox for a verification link.',
-                true
+                { variant: 'error' }
               );
             } else {
-              showAlertBanner('Login failed. Please check your credentials.', true);
+              showToast('Login failed. Please check your credentials.', {
+                variant: 'error',
+              });
             }
           }
         });

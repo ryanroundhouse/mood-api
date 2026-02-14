@@ -160,29 +160,10 @@
           padding-left: 10px;
         }
       }
-
-      /* Add these new styles for the alert banner */
-      .alert-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: #4caf50;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        z-index: 1000;
-        display: none;
-      }
-
-      .alert-banner.error {
-        background-color: #f44336;
-      }
     </style>
   </head>
   <body>
     <header>
-      <div id="alertBanner" class="alert-banner"></div>
       <a href="index.html"
         ><img src="img/logo.png" alt="Moodful Logo" class="logo"
       /></a>
@@ -291,6 +272,7 @@
 
     <script type="module">
       import { unauthenticatedApiCall } from './api-script.js';
+      import { showToast } from './toast.mjs';
 
       // Get URL parameters
       const urlParams = new URLSearchParams(window.location.search);
@@ -356,25 +338,15 @@
         });
       });
 
-      // Add this function to show temporary alert banners
-      function showAlertBanner(message, isError = false) {
-        const banner = document.getElementById('alertBanner');
-        banner.textContent = message;
-        banner.classList.toggle('error', isError);
-        banner.style.display = 'block';
-
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
-      }
-
       // Modify the mood submission functionality
       document
         .getElementById('submitMood')
         .addEventListener('click', async () => {
           const selectedMood = document.querySelector('.mood-option.selected');
           if (!selectedMood) {
-            showAlertBanner('Please select a mood before submitting.', true);
+            showToast('Please select a mood before submitting.', {
+              variant: 'error',
+            });
             return;
           }
 
@@ -403,13 +375,15 @@
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             });
 
-            showAlertBanner('Mood submitted successfully!');
+            showToast('Mood submitted successfully!', { variant: 'success' });
             setTimeout(() => {
               window.location.href = 'dashboard.html'; // Redirect to dashboard after submission
             }, 1000); // Wait for 1 second before redirecting
           } catch (error) {
             console.error('Error:', error);
-            showAlertBanner('Failed to submit mood. Please try again.', true);
+            showToast('Failed to submit mood. Please try again.', {
+              variant: 'error',
+            });
           }
         });
 

@@ -7,6 +7,7 @@
 - **2026-02-14**: Improved the password reset email UX with a branded HTML template (logo + headline + button CTA), added an expiry + security note, and included a plain-text fallback part (with a unit test).
 - **2026-02-14**: Enforced server-side auth for authenticated HTML pages (`dashboard.html`, `weekly-summary.html`, `account-settings.html`) by validating the web refresh cookie against `refresh_tokens` and redirecting unauthenticated requests to `login.html` (defense-in-depth, Issue #10).
 - **2026-02-14**: Added baseline security headers (CSP, HSTS on HTTPS in prod, XFO, nosniff, referrer-policy, permissions-policy) at the Express layer to reduce XSS/clickjacking risk (Issue #5).
+- **2026-02-14**: Replaced the fixed success/error banner in `app/` with toast notifications (`app/toast.mjs` + CSS) so messages don’t cover header navigation (and added a small unit test).
 
 ## Handoff requirements
 - Add a bullet for each agent session with **date + what changed + why** (when repo changes were made).

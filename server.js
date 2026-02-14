@@ -215,6 +215,23 @@ try {
   app.use('/api/mood', moodRoutes);
   console.log('✓ Routes configured');
 
+  // Server-side auth gating for authenticated HTML pages (defense-in-depth).
+  // Must be registered before express.static() so unauth users don't receive page contents.
+  const {
+    createRequireWebRefreshAuth,
+  } = require('./middleware/requireWebRefreshAuth');
+  const requireWebRefreshAuth = createRequireWebRefreshAuth();
+
+  app.get('/dashboard.html', requireWebRefreshAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'app', 'dashboard.html'));
+  });
+  app.get('/weekly-summary.html', requireWebRefreshAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'app', 'weekly-summary.html'));
+  });
+  app.get('/account-settings.html', requireWebRefreshAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'app', 'account-settings.html'));
+  });
+
   // Error handling middleware
   app.use((err, req, res, next) => {
     console.error('Express error handler caught:', err);

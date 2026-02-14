@@ -24,20 +24,45 @@ function isWebAuthRequest(req) {
 }
 
 function getRefreshCookieOptions() {
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  // Align with server.js behavior: treat anything other than explicit "production"
+  // as development-like to avoid setting Secure cookies on local http for
+  // NODE_ENV values like "test", "sandbox", "staging", etc.
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   return {
     httpOnly: true,
     secure: !isDevelopment,
     sameSite: 'lax',
-    // Limit cookie to web-auth endpoints only
-    path: WEB_AUTH_BASE_URL,
+    // Web session cookie used for refresh + server-gating authenticated HTML pages
+    path: '/',
     // 30 days (match DB refresh token expiry)
     maxAge: 30 * 24 * 60 * 60 * 1000,
   };
 }
 
+function getLastCookieValue(cookieHeader, cookieName) {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return null;
+  const needle = `${cookieName}=`;
+  let idx = -1;
+  let next = cookieHeader.indexOf(needle);
+  while (next !== -1) {
+    idx = next;
+    next = cookieHeader.indexOf(needle, next + needle.length);
+  }
+  if (idx === -1) return null;
+  const valueStart = idx + needle.length;
+  const valueEnd = cookieHeader.indexOf(';', valueStart);
+  const rawValue =
+    valueEnd === -1 ? cookieHeader.slice(valueStart) : cookieHeader.slice(valueStart, valueEnd);
+  return rawValue || null;
+}
+
 function readRefreshToken(req) {
   if (isWebAuthRequest(req)) {
+    // If duplicate cookies exist (e.g., old Path=/api/web-auth plus new Path=/),
+    // prefer the *last* cookie in the raw header (browsers commonly order
+    // cookies by path specificity first).
+    const raw = getLastCookieValue(req.headers && req.headers.cookie, REFRESH_COOKIE_NAME);
+    if (raw) return raw;
     return req.cookies && req.cookies[REFRESH_COOKIE_NAME];
   }
   return req.body && req.body.refreshToken;

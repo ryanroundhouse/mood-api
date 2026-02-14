@@ -108,7 +108,7 @@ async function startTestServer() {
 }
 
 function extractCookieValue(setCookieHeader, cookieName) {
-  // "refreshToken=abc; Path=/api/auth; HttpOnly; ..."
+  // "refreshToken=abc; Path=/; HttpOnly; ..."
   const match = setCookieHeader.match(new RegExp(`(?:^|,\\s*)${cookieName}=([^;]*)`));
   return match ? match[1] : null;
 }
@@ -150,8 +150,8 @@ test('web mode (/api/web-auth/*) sets HttpOnly refresh cookie and does not retur
     assert.ok(setCookie, 'expected Set-Cookie header');
     assert.ok(setCookie.includes('HttpOnly'), 'expected HttpOnly cookie');
     assert.ok(
-      setCookie.includes('Path=/api/web-auth'),
-      'expected cookie Path=/api/web-auth'
+      setCookie.includes('Path=/'),
+      'expected cookie Path=/'
     );
 
     const refreshToken = extractCookieValue(setCookie, 'refreshToken');
@@ -324,7 +324,7 @@ test('web refresh-token + logout work via cookie (no body refreshToken)', async 
 
     const logoutSetCookie = logoutRes.headers.get('set-cookie');
     assert.ok(logoutSetCookie, 'expected Set-Cookie on logout to clear cookie');
-    assert.ok(logoutSetCookie.includes('Path=/api/web-auth'));
+    assert.ok(logoutSetCookie.includes('Path=/'));
     assert.ok(logoutSetCookie.startsWith('refreshToken='));
 
     assert.equal(fakeDb._refreshTokens.has(refreshToken), false);

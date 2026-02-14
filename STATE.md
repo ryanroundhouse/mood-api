@@ -36,7 +36,8 @@
 - Do not commit secrets or production data (`.env`, `*.sqlite`, key files are ignored).
 - Preserve webhook parsing requirements (Stripe/Garmin raw-body routes configured in `server.js`).
 - Prefer tests that don’t require real third-party credentials; mock/stub external APIs.
-- Web auth uses an HttpOnly refresh cookie under `/api/web-auth/*`; the static site should not persist auth tokens in `localStorage`.
+- Web auth uses an HttpOnly refresh cookie (Path `/`) via `/api/web-auth/*`; the static site should not persist auth tokens in `localStorage`.
+- Authenticated HTML pages (`dashboard.html`, `weekly-summary.html`, `account-settings.html`) are server-gated using the refresh cookie (unauthenticated requests redirect to `login.html`).
 
 ## Auth endpoint prefixes (migration in progress)
 - **`/api/web-auth/*`**: Web-only cookie-based auth (refresh token in HttpOnly cookie).

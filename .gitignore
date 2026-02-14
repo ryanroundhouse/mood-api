@@ -97,6 +97,7 @@ analytics.sqlite
 scripts/my_env
 .venv
 moodful-gcloud-api-key.json
+.cursor/mcp.json
 .env
 docs/
 debug/

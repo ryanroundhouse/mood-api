@@ -4,6 +4,7 @@
 - **Datastores**: SQLite (`database.sqlite`, `analytics.sqlite`)
 - **Testing (Node)**: Node built-in **`node:test`** via `npm test`
 - **Email UX**: Auth emails are HTML-first; password reset emails include a branded HTML template + plain-text fallback (`routes/auth.js`)
+- **Security headers**: Baseline hardening headers (CSP/HSTS/etc.) applied via `helmet` (`middleware/securityHeaders.js`)
 - **Last updated**: 2026-02-14
 
 ## How to run

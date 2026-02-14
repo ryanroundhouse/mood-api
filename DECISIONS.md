@@ -34,6 +34,18 @@
   - Web clients no longer persist auth tokens in `localStorage`, reducing XSS exfiltration risk.
   - External clients retain backwards compatibility via the legacy `/api/*` contract.
 
+### ADR-0004 — Express-layer baseline security headers (helmet)
+- **Status**: Accepted
+- **Date**: 2026-02-14
+- **Context**: Pentest finding: key security headers were missing on both public and authenticated pages (e.g., `/`, `/dashboard.html`). We want consistent app-layer headers without depending on edge (Cloudflare).
+- **Decision**:
+  - Apply baseline security headers globally in Express via `helmet` + a small wrapper middleware (`middleware/securityHeaders.js`).
+  - Use a baseline CSP that **allows inline scripts/styles** initially because the static site under `app/` contains substantial inline `<script>` / `<style>`; tighten later via refactor/nonces/hashes.
+  - Emit HSTS only in production mode and only when the request is effectively HTTPS (respects `X-Forwarded-Proto` with `trust proxy`).
+- **Consequences**:
+  - All HTML and API responses get consistent hardening headers.
+  - CSP is an incremental improvement rather than a strict lock-down until the static site is refactored.
+
 ## Handoff requirements
 - Add a new ADR when making a non-trivial change in approach (tooling, structure, constraints).
 - Keep entries short; link to files/paths when relevant.

@@ -141,6 +141,12 @@ try {
   // Trust proxy settings (add this before other middleware)
   app.set('trust proxy', 1);
 
+  // Baseline security headers (CSP, HSTS, etc.)
+  const {
+    createSecurityHeadersMiddleware,
+  } = require('./middleware/securityHeaders');
+  app.use(createSecurityHeadersMiddleware({ isDevelopment }));
+
   // CORS configuration
   // - Dev: allow all origins
   // - Prod: allow only known site origins (plus requests with no Origin, e.g. curl/health checks)

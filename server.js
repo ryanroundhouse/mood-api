@@ -118,6 +118,8 @@ try {
   console.log('✓ garmin routes loaded');
 
   const app = express();
+  // Security: avoid framework fingerprinting
+  app.disable('x-powered-by');
   const port = 3000;
   const isDevelopment = process.env.NODE_ENV === 'development';
 

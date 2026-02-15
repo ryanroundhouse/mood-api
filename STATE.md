@@ -40,6 +40,7 @@
 - Prefer tests that don’t require real third-party credentials; mock/stub external APIs.
 - Web auth uses an HttpOnly refresh cookie (Path `/`) via `/api/web-auth/*`; the static site should not persist auth tokens in `localStorage`.
 - Authenticated HTML pages (`dashboard.html`, `weekly-summary.html`, `account-settings.html`) are server-gated using the refresh cookie (unauthenticated requests redirect to `login.html`).
+- API rate limiting (production) applies to `/api/*` endpoints and keys by `cf-connecting-ip` (Cloudflare) with fallbacks to `x-forwarded-for` and `req.ip`.
 
 ## Auth endpoint prefixes (migration in progress)
 - **`/api/web-auth/*`**: Web-only cookie-based auth (refresh token in HttpOnly cookie).

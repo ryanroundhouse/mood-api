@@ -8,6 +8,7 @@
 - **2026-02-14**: Enforced server-side auth for authenticated HTML pages (`dashboard.html`, `weekly-summary.html`, `account-settings.html`) by validating the web refresh cookie against `refresh_tokens` and redirecting unauthenticated requests to `login.html` (defense-in-depth, Issue #10).
 - **2026-02-14**: Added baseline security headers (CSP, HSTS on HTTPS in prod, XFO, nosniff, referrer-policy, permissions-policy) at the Express layer to reduce XSS/clickjacking risk (Issue #5).
 - **2026-02-14**: Replaced the fixed success/error banner in `app/` with toast notifications (`app/toast.mjs` + CSS) so messages don’t cover header navigation (and added a small unit test).
+- **2026-02-14**: Adjusted API rate limiting to key by `cf-connecting-ip` (Cloudflare) with safe fallbacks and increased the general limit to **500 requests per 15 minutes** to reduce false-positive 429s behind the CDN.
 
 ## Handoff requirements
 - Add a bullet for each agent session with **date + what changed + why** (when repo changes were made).

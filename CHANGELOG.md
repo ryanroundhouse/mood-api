@@ -1,6 +1,8 @@
 ## Agent change log
 
 ### Unreleased
+- **2026-03-21**: Implemented breathing session backend support end to end: added the authenticated `/api/breathing` API, the `breathing_sessions` SQLite table plus indexes, account-deletion cleanup, breathing-aware LLM summary input in `scripts/send-mood-summary.py`, and Node/Python test coverage. Also updated `breathing_tracking_requirements.md` to document the shipped frontend contract.
+- **2026-03-21**: Extended `breathing_tracking_requirements.md` with repo-specific implementation guidance for the new breathing feature, covering the additive SQLite schema, authenticated REST endpoints, account-deletion impact, and how `scripts/send-mood-summary.py` should include breathing session data in LLM mood summaries.
 - **2026-03-21**: Refreshed `AGENTS.md`, `STATE.md`, and `DECISIONS.md` so agent docs match the current repository layout, route mounts, test inventory, and the root-scoped web auth refresh cookie used for authenticated HTML gating.
 - **2026-02-14**: Added agent workflow docs (`AGENTS.md`, `STATE.md`, `DECISIONS.md`) and changelog template so future tasks start with clear constraints and end with consistent handoffs.
 - **2026-02-14**: Hardened web auth token storage by moving refresh tokens to an `HttpOnly` cookie for `/api/web-auth/*`, removing `localStorage` token persistence from `app/`, and adding tests + docs while preserving legacy JSON refresh-token flows under `/api/*` (and keeping `/api/auth/*` mounted for mobile backwards compatibility).
@@ -14,4 +16,3 @@
 ## Handoff requirements
 - Add a bullet for each agent session with **date + what changed + why** (when repo changes were made).
 - Update `STATE.md` when structure/commands/testing conventions change.
-

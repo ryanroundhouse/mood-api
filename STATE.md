@@ -15,13 +15,13 @@
 ### Python scripts
 - Install script deps: `pip install -r scripts/requirements.txt`
 - Example script: `python scripts/send_mood_request.py`
-- Script test: `python -m unittest scripts.test_send_mood_request`
+- Script tests: `python3 -m unittest scripts.test_send_mood_request scripts.test_send_mood_summary`
 
 ## High-level structure
 - `server.js`: bootstraps env defaults, initializes both databases, configures middleware order, mounts routes, gates authenticated HTML, and serves `app/`
 - `database.js`: owns `database.sqlite`, creates base tables, and performs additive migrations at startup
 - `analytics.js`: owns `analytics.sqlite` and tracks mood submission analytics
-- `routes/`: `auth.js`, `user.js`, `moods.js`, `stripe.js`, `contact.js`, `google-play.js`, `apple-store.js`, `garmin.js`
+- `routes/`: `auth.js`, `user.js`, `moods.js`, `breathing.js`, `stripe.js`, `contact.js`, `google-play.js`, `apple-store.js`, `garmin.js`
 - `middleware/`: JWT auth, rate limiter, security headers, legacy auth deprecation, refresh-cookie HTML gating
 - `utils/`: encryption, mailer, datetime helpers, logger
 - `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`
@@ -39,6 +39,7 @@
   - `/api/mood`
 - Other mounted prefixes:
   - `/api/user`
+  - `/api/breathing`
   - `/api/stripe`
   - `/api/contact`
   - `/api/google-play`
@@ -54,7 +55,7 @@
 
 ## Datastores
 - Primary DB: `database.sqlite`
-  - Core tables include `users`, `moods`, `user_settings`, `custom_activities`, `summaries`, `refresh_tokens`, `mood_auth_codes`, `garmin_request_tokens`, `sleep_summaries`, and `daily_summaries`
+  - Core tables include `users`, `moods`, `breathing_sessions`, `user_settings`, `custom_activities`, `summaries`, `refresh_tokens`, `mood_auth_codes`, `garmin_request_tokens`, `sleep_summaries`, and `daily_summaries`
   - Sensitive mood comments and summary payloads are encrypted before storage
 - Analytics DB: `analytics.sqlite`
   - Tracks `mood_submissions`
@@ -74,17 +75,20 @@
 - `tests/authMiddleware.test.js`
 - `tests/authCookieFlow.test.js`
 - `tests/authenticatedHtmlRoutes.test.js`
+- `tests/breathingRoutes.test.js`
 - `tests/datetime.test.js`
 - `tests/encryption.test.js`
 - `tests/passwordResetEmail.test.js`
 - `tests/rateLimiter.test.js`
 - `tests/securityHeaders.test.js`
 - `tests/toast.test.js`
+- `tests/userAccountDeletion.test.js`
 
 ## Operational scripts
 - Python scripts include:
   - `send_mood_request.py`
   - `send-mood-summary.py`
+  - `test_send_mood_summary.py`
   - `send-privacy-update-notification.py`
   - `calculate-usage-stats.py`
   - `convert_moods_to_local.py`
@@ -105,4 +109,3 @@
 - Update this file whenever structure, commands, auth behavior, or testing conventions change.
 - Update `CHANGELOG.md` whenever repo files changed during the task.
 - Run relevant automated checks for code changes before considering the task complete.
-

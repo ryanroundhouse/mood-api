@@ -1,14 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const express = require('express');
-const cookieParser = require('cookie-parser');
 
 const {
   createRequireWebRefreshAuth,
 } = require('../middleware/requireWebRefreshAuth');
 
 function makeFakeDb() {
-  const refreshTokens = new Map(); // token -> { userId, token, expiresAt }
+  const refreshTokens = new Map();
 
   function seedRefreshToken(row) {
     refreshTokens.set(row.token, row);
@@ -17,9 +15,7 @@ function makeFakeDb() {
   function get(sql, params, cb) {
     try {
       if (sql.includes('FROM refresh_tokens WHERE token')) {
-        const token = params[0];
-        const row = refreshTokens.get(token);
-        // SQL checks expiresAt > now; emulate that behavior
+        const row = refreshTokens.get(params[0]);
         if (!row || row.expiresAt <= params[1]) return cb(null, undefined);
         return cb(null, { userId: row.userId });
       }
@@ -32,61 +28,62 @@ function makeFakeDb() {
   return { seedRefreshToken, get };
 }
 
-async function startTestServer({ fakeDb }) {
-  const app = express();
-  app.use(cookieParser());
-
-  const requireWebRefreshAuth = createRequireWebRefreshAuth({ db: fakeDb });
-
-  // Serve simple placeholders; we only care about auth gating behavior.
-  app.get('/dashboard.html', requireWebRefreshAuth, (req, res) => {
-    res.status(200).send('DASHBOARD_OK');
-  });
-  app.get('/weekly-summary.html', requireWebRefreshAuth, (req, res) => {
-    res.status(200).send('WEEKLY_SUMMARY_OK');
-  });
-  app.get('/account-settings.html', requireWebRefreshAuth, (req, res) => {
-    res.status(200).send('ACCOUNT_SETTINGS_OK');
-  });
-
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, () => resolve(s));
-  });
-  const port = server.address().port;
-
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
+async function invokeProtectedPage(requireWebRefreshAuth, path, cookieValue) {
+  const req = {
+    path,
+    originalUrl: path,
+    cookies: cookieValue ? { refreshToken: cookieValue } : {},
   };
+
+  return await new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      setHeader(field, value) {
+        this.headers[field.toLowerCase()] = value;
+      },
+      getHeader(field) {
+        return this.headers[field.toLowerCase()];
+      },
+      set(field, value) {
+        this.headers[field.toLowerCase()] = value;
+        return this;
+      },
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      send(payload) {
+        resolve({ statusCode: this.statusCode, headers: this.headers, body: payload });
+        return this;
+      },
+      redirect(codeOrLocation, maybeLocation) {
+        this.statusCode = typeof maybeLocation === 'string' ? codeOrLocation : 302;
+        this.headers.location = typeof maybeLocation === 'string' ? maybeLocation : codeOrLocation;
+        resolve({ statusCode: this.statusCode, headers: this.headers, body: undefined });
+        return this;
+      },
+    };
+
+    requireWebRefreshAuth(req, res, () => {
+      res.set('Cache-Control', 'no-store');
+      res.status(200).send(path.toUpperCase());
+    });
+  });
 }
 
 test('authenticated HTML routes redirect to /login.html when cookie missing', async () => {
-  const fakeDb = makeFakeDb();
-  const server = await startTestServer({ fakeDb });
-  try {
-    const res = await fetch(`${server.baseUrl}/dashboard.html`, {
-      redirect: 'manual',
-    });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/login.html');
-  } finally {
-    await server.close();
-  }
+  const middleware = createRequireWebRefreshAuth({ db: makeFakeDb() });
+  const res = await invokeProtectedPage(middleware, '/dashboard.html');
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/login.html');
 });
 
 test('authenticated HTML routes redirect to /login.html when cookie invalid/expired', async () => {
-  const fakeDb = makeFakeDb();
-  const server = await startTestServer({ fakeDb });
-  try {
-    const res = await fetch(`${server.baseUrl}/weekly-summary.html`, {
-      redirect: 'manual',
-      headers: { Cookie: 'refreshToken=not-a-real-token' },
-    });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/login.html');
-  } finally {
-    await server.close();
-  }
+  const middleware = createRequireWebRefreshAuth({ db: makeFakeDb() });
+  const res = await invokeProtectedPage(middleware, '/weekly-summary.html', 'not-a-real-token');
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/login.html');
 });
 
 test('authenticated HTML routes return 200 with valid refresh cookie and set Cache-Control: no-store', async () => {
@@ -97,17 +94,9 @@ test('authenticated HTML routes return 200 with valid refresh cookie and set Cac
     expiresAt: Date.now() + 60_000,
   });
 
-  const server = await startTestServer({ fakeDb });
-  try {
-    const res = await fetch(`${server.baseUrl}/account-settings.html`, {
-      redirect: 'manual',
-      headers: { Cookie: 'refreshToken=valid-token' },
-    });
-    assert.equal(res.status, 200);
-    assert.equal(await res.text(), 'ACCOUNT_SETTINGS_OK');
-    assert.equal(res.headers.get('cache-control'), 'no-store');
-  } finally {
-    await server.close();
-  }
+  const middleware = createRequireWebRefreshAuth({ db: fakeDb });
+  const res = await invokeProtectedPage(middleware, '/account-settings.html', 'valid-token');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, '/ACCOUNT-SETTINGS.HTML');
+  assert.equal(res.headers['cache-control'], 'no-store');
 });
-

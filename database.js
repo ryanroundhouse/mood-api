@@ -446,6 +446,45 @@ function initializeDatabase() {
       ON daily_summaries(garminUserId)
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS breathing_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        routineType TEXT NOT NULL,
+        cycleMode TEXT NOT NULL,
+        targetCycles INTEGER,
+        completedCycles INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        startedAt TEXT NOT NULL,
+        endedAt TEXT NOT NULL,
+        durationSeconds INTEGER NOT NULL DEFAULT 0,
+        calendarDate TEXT NOT NULL,
+        timezone TEXT,
+        triggerContext TEXT,
+        audioEnabled INTEGER,
+        countdownCompleted INTEGER,
+        exitReason TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id)
+      )
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_breathing_sessions_user_started_at
+      ON breathing_sessions(userId, startedAt DESC)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_breathing_sessions_user_calendar_date
+      ON breathing_sessions(userId, calendarDate)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_breathing_sessions_user_status
+      ON breathing_sessions(userId, status)
+    `);
+
     logger.info('Database tables initialized successfully');
   });
 }

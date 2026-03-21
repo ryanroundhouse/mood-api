@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock, call
 from datetime import date, timedelta, datetime
-import pytz
 import sys
 import os
 
@@ -23,9 +22,6 @@ except ImportError as e:
     # Print sys.path for debugging
     print("sys.path:", sys.path)
     sys.exit(1)
-
-# Define EST timezone for consistency with the script
-EST_TIMEZONE = pytz.timezone('America/New_York')
 
 class TestSendMoodRequest(unittest.TestCase):
 

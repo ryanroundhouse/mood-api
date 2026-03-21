@@ -13,8 +13,6 @@ import random
 import nltk
 import pathlib
 import logging
-nltk.download('opinion_lexicon')
-nltk.download('wordnet')
 from nltk.corpus import opinion_lexicon
 from nltk.corpus import wordnet
 from openai import OpenAI
@@ -37,7 +35,15 @@ DB_PATH = os.path.join(project_root, "database.sqlite")
 
 # OpenAI configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+
+def ensure_nltk_resource(resource_name):
+    try:
+        nltk.data.find(f'corpora/{resource_name}')
+    except LookupError:
+        nltk.download(resource_name, quiet=True)
+
+def get_openai_client():
+    return OpenAI(api_key=OPENAI_API_KEY)
 
 def get_or_create_unsubscribe_token(user_id):
     """Gets or creates an unsubscribe token for the user."""
@@ -67,11 +73,6 @@ def get_users():
     conn.close()
     return users
 
-from datetime import datetime, timedelta, timezone
-
-import re
-from datetime import datetime, timedelta
-
 def decrypt(encrypted_data):
     if not encrypted_data:
         return None
@@ -95,6 +96,57 @@ def decrypt(encrypted_data):
     except Exception as e:
         print(f"Error decrypting data: {e}")
         return None
+
+def ensure_day_bucket(moods, calendar_date):
+    if calendar_date not in moods:
+        moods[calendar_date] = {
+            'date': calendar_date,
+            'rating': None,
+            'comment': None,
+            'activities': [],
+        }
+    return moods[calendar_date]
+
+def build_breathing_sessions_payload(rows):
+    sessions_by_date = defaultdict(list)
+
+    for row in rows:
+        calendar_date = row[0]
+        session = {
+            'routine_type': row[1],
+            'cycle_mode': row[2],
+            'target_cycles': row[3],
+            'completed_cycles': row[4] if row[4] else 0,
+            'status': row[5],
+            'started_at': row[6],
+            'ended_at': row[7],
+            'duration_seconds': row[8] if row[8] else 0,
+            'trigger_context': row[9],
+            'audio_enabled': None if row[10] is None else bool(row[10]),
+            'countdown_completed': None if row[11] is None else bool(row[11]),
+            'exit_reason': row[12],
+        }
+        sessions_by_date[calendar_date].append(session)
+
+    aggregates_by_date = {}
+    for calendar_date, sessions in sessions_by_date.items():
+        completed_session_count = sum(1 for session in sessions if session['status'] == 'completed')
+        partial_session_count = len(sessions) - completed_session_count
+        total_duration_seconds = sum(session['duration_seconds'] for session in sessions)
+        total_completed_cycles = sum(session['completed_cycles'] for session in sessions)
+        routines_used = sorted({session['routine_type'] for session in sessions})
+
+        aggregates_by_date[calendar_date] = {
+            'session_count': len(sessions),
+            'completed_session_count': completed_session_count,
+            'partial_session_count': partial_session_count,
+            'total_duration_seconds': total_duration_seconds,
+            'total_completed_cycles': total_completed_cycles,
+            'routines_used': routines_used,
+            'used_breathing': len(sessions) > 0,
+        }
+
+    return sessions_by_date, aggregates_by_date
 
 def get_user_moods(user_id, start_date, end_date):
     conn = sqlite3.connect(DB_PATH)
@@ -147,14 +199,7 @@ def get_user_moods(user_id, start_date, end_date):
         if calendar_date in moods:
             moods[calendar_date]['sleep_data'] = sleep_data
         else:
-            # Create a mood entry with just sleep data (no mood rating)
-            moods[calendar_date] = {
-                'date': calendar_date,
-                'rating': None,
-                'comment': None,
-                'activities': [],
-                'sleep_data': sleep_data
-            }
+            ensure_day_bucket(moods, calendar_date)['sleep_data'] = sleep_data
     
     # Fetch daily summary data for the same date range
     cursor.execute("""
@@ -181,14 +226,23 @@ def get_user_moods(user_id, start_date, end_date):
         if calendar_date in moods:
             moods[calendar_date]['daily_data'] = daily_data
         else:
-            # Create a mood entry with just daily data (no mood rating)
-            moods[calendar_date] = {
-                'date': calendar_date,
-                'rating': None,
-                'comment': None,
-                'activities': [],
-                'daily_data': daily_data
-            }
+            ensure_day_bucket(moods, calendar_date)['daily_data'] = daily_data
+
+    cursor.execute("""
+        SELECT calendarDate, routineType, cycleMode, targetCycles, completedCycles,
+               status, startedAt, endedAt, durationSeconds, triggerContext,
+               audioEnabled, countdownCompleted, exitReason
+        FROM breathing_sessions
+        WHERE userId = ? AND calendarDate >= ? AND calendarDate <= ?
+        ORDER BY startedAt ASC, id ASC
+    """, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+
+    breathing_sessions_by_date, breathing_aggregates_by_date = build_breathing_sessions_payload(cursor.fetchall())
+
+    for calendar_date, sessions in breathing_sessions_by_date.items():
+        bucket = ensure_day_bucket(moods, calendar_date)
+        bucket['breathing_sessions'] = sessions
+        bucket['breathing_summary'] = breathing_aggregates_by_date[calendar_date]
     
     conn.close()
     return moods
@@ -463,9 +517,11 @@ def send_email(to_email, calendar_html, basic_stats, openai_insights, start_date
         print(f"Failed to send email to {to_email}. Error: {str(e)}")
 
 def get_positive_words():
+    ensure_nltk_resource('opinion_lexicon')
     return set(opinion_lexicon.positive())
 
 def get_stress_words():
+    ensure_nltk_resource('wordnet')
     stress_synsets = wordnet.synsets('stress') + wordnet.synsets('anxiety') + wordnet.synsets('fatigue')
     stress_words = set()
     for synset in stress_synsets:
@@ -1155,7 +1211,7 @@ def get_openai_insights(moods):
     prompt = """
     Assume today's date is {current_date}.
 
-    You will be given mood data in JSON format for the previous month. This data includes mood entries, sleep data, and daily activity data from Garmin devices. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
+    You will be given mood data in JSON format for the previous month. This data includes mood entries, breathing session data, sleep data, and daily activity data from Garmin devices. For each question below, provide a concise answer in JSON format, using 'Answer#' as the key.
 
     **Instructions:**
 
@@ -1163,17 +1219,17 @@ def get_openai_insights(moods):
     - Answers must be clear, concise, and supported by specific examples or evidence from the data.
     - Do not repeat the questions.
     - Only output JSON, no extra text or explanation.
-    - For each answer, reference at least one relevant date and activity/comment/sleep/daily data from the sample data.
+    - For each answer, reference at least one relevant date and activity/comment/breathing/sleep/daily data from the sample data.
     - For predictions, only give positive predictions based on trends you observe.
     - For 'small win', it must be a positive event from the last 7 days, with encouragement to celebrate it.
     - For 'prediction', it must be a positive prediction for the upcoming week, based on recent patterns.
-    - For 'insights', analyze relationships between mood ratings, activities, comments, sleep data, AND daily activity data if available.
-    - For 'trends', look for correlations involving sleep quality, duration, physical activity levels, and mood patterns.
+    - For 'insights', analyze relationships between mood ratings, activities, comments, breathing sessions, sleep data, AND daily activity data if available.
+    - For 'trends', look for correlations involving breathing habits, sleep quality, duration, physical activity levels, and mood patterns.
 
     **Questions:**
 
-    1. What insights can you find about how comments, activities, sleep data, daily activity data, and mood ratings relate to one another?
-    2. What are the most significant trends or correlations in the data from the past month, including sleep and activity patterns if available?
+    1. What insights can you find about how comments, activities, breathing sessions, sleep data, daily activity data, and mood ratings relate to one another?
+    2. What are the most significant trends or correlations in the data from the past month, including breathing, sleep, and activity patterns if available?
     3. Identify a small win from the past week. Include encouragement to celebrate this.
     4. Predict one positive thing that might happen with your moods next week, based on recent patterns including sleep and activity data if available.
 
@@ -1181,6 +1237,20 @@ def get_openai_insights(moods):
     - Mood ratings are on a scale from 0-4 where 0 is the worst mood and 4 is the best mood.
     - Activities are tags for activities, aspects, observations, etc. that the user can associate with mood entries outside of their comment.
     - Comments are freeform text optionally input by the user about their day.
+    - Breathing session data (when available) includes:
+      * breathing_sessions: A list of sessions on that day
+      * breathing_summary.session_count: Number of breathing sessions that day
+      * breathing_summary.completed_session_count: Number of sessions marked completed
+      * breathing_summary.partial_session_count: Number of sessions marked exited early or interrupted
+      * breathing_summary.total_duration_seconds: Total time spent in breathing sessions that day
+      * breathing_summary.total_completed_cycles: Total cycles completed across all sessions that day
+      * breathing_summary.routines_used: Unique breathing routines used that day
+      * breathing_summary.used_breathing: Whether any breathing session happened that day
+      * breathing_sessions[].routine_type: One of box_breathing or four_seven_eight
+      * breathing_sessions[].cycle_mode: One of 3_cycles, 5_cycles, 10_cycles, or infinite
+      * breathing_sessions[].completed_cycles: How many full cycles were completed
+      * breathing_sessions[].status: One of completed, exited_early, or interrupted
+      * breathing_sessions[].duration_seconds: Effective session duration
     - Sleep data (when available) includes:
       * total_sleep_hours: Total sleep duration in hours
       * deep_sleep_hours: Deep sleep phase duration
@@ -1196,7 +1266,8 @@ def get_openai_insights(moods):
       * average_stress_level: Average stress level (0-100 scale)
       * max_stress_level: Maximum stress level recorded
       * stress_duration_minutes: Total minutes of elevated stress
-    - Some entries may have only mood data, only sleep/activity data, or combinations. Analyze accordingly.
+    - Some entries may have only mood data, only breathing data, only sleep/activity data, or combinations. Analyze accordingly.
+    - Look for whether breathing sessions tend to happen near lower-mood days, high-stress days, or days that later improve.
 
     # Mood Data:
 
@@ -1213,6 +1284,8 @@ def get_openai_insights(moods):
     """
 
     prompt = prompt.format(moods=json.dumps(moods, indent=2), current_date=current_date)
+
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",

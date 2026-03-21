@@ -1,6 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const express = require('express');
 
 function makeFakeDb() {
   const usersByEmail = new Map();
@@ -14,8 +13,7 @@ function makeFakeDb() {
   function get(sql, params, cb) {
     try {
       if (sql.includes('FROM users WHERE email')) {
-        const email = params[0];
-        return cb(null, usersByEmail.get(email));
+        return cb(null, usersByEmail.get(params[0]));
       }
       return cb(new Error(`Unhandled db.get SQL: ${sql}`));
     } catch (err) {
@@ -67,6 +65,21 @@ function installMailerMock({ sendMail }) {
   };
 }
 
+function installLoggerMock() {
+  const loggerPath = require.resolve('../utils/logger');
+  require.cache[loggerPath] = {
+    id: loggerPath,
+    filename: loggerPath,
+    loaded: true,
+    exports: {
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    },
+  };
+}
+
 function clearModule(modulePath) {
   try {
     delete require.cache[require.resolve(modulePath)];
@@ -75,22 +88,75 @@ function clearModule(modulePath) {
   }
 }
 
-async function startTestServer() {
-  const app = express();
-  app.use(express.json());
+function getRouteLayer(router, method, path) {
+  return router.stack.find(
+    (layer) => layer.route && layer.route.path === path && layer.route.methods[method]
+  );
+}
 
-  const authRoutes = require('../routes/auth');
-  app.use('/api/auth', authRoutes);
+async function invokeRoute(router, method, path, body) {
+  const layer = getRouteLayer(router, method, path);
+  assert.ok(layer, `Expected ${method.toUpperCase()} ${path} route`);
 
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, () => resolve(s));
-  });
-  const port = server.address().port;
-
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
+  const req = {
+    method: method.toUpperCase(),
+    url: path,
+    path,
+    baseUrl: '/api/auth',
+    body,
+    query: {},
+    params: {},
+    headers: {},
+    ip: '127.0.0.1',
+    get(header) {
+      return this.headers[header.toLowerCase()];
+    },
   };
+
+  return await new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      setHeader(field, value) {
+        this.headers[field.toLowerCase()] = value;
+      },
+      getHeader(field) {
+        return this.headers[field.toLowerCase()];
+      },
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        resolve({ statusCode: this.statusCode, body: payload });
+        return this;
+      },
+    };
+
+    const handlers = layer.route.stack.map((routeLayer) => routeLayer.handle);
+    let index = 0;
+
+    function next(err) {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      const handler = handlers[index++];
+      if (!handler) {
+        resolve({ statusCode: res.statusCode, body: undefined });
+        return;
+      }
+
+      try {
+        handler(req, res, next);
+      } catch (handlerErr) {
+        reject(handlerErr);
+      }
+    }
+
+    next();
+  });
 }
 
 test('forgot-password sends branded HTML + text reset email', async () => {
@@ -100,11 +166,12 @@ test('forgot-password sends branded HTML + text reset email', async () => {
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
   process.env.NOREPLY_EMAIL = 'noreply@moodful.ca';
-  // Use localhost to simulate dev/test sending; logo must still be public https.
   process.env.MOOD_SITE_URL = 'http://localhost:3000';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
   const fakeDb = makeFakeDb();
   fakeDb.seedUser({ id: 1, email: 'ryan@example.com', name: 'Ryan' });
+  installLoggerMock();
   installDatabaseMock(fakeDb);
 
   const sent = [];
@@ -116,42 +183,30 @@ test('forgot-password sends branded HTML + text reset email', async () => {
   });
 
   clearModule('../routes/auth');
+  const authRoutes = require('../routes/auth');
 
-  const server = await startTestServer();
-  try {
-    const res = await fetch(`${server.baseUrl}/api/auth/forgot-password`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'ryan@example.com' }),
-    });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.message, 'Password reset email sent');
+  const res = await invokeRoute(authRoutes, 'post', '/forgot-password', {
+    email: 'ryan@example.com',
+  });
 
-    assert.equal(sent.length, 1);
-    const msg = sent[0];
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.message, 'Password reset email sent');
+  assert.equal(sent.length, 1);
 
-    const { token } = fakeDb._getLastReset();
-    assert.ok(token, 'expected reset token to be stored');
-    const resetLink = `http://localhost:3000/reset.html?token=${token}`;
+  const msg = sent[0];
+  const { token } = fakeDb._getLastReset();
+  assert.ok(token, 'expected reset token to be stored');
+  const resetLink = `http://localhost:3000/reset.html?token=${token}`;
 
-    assert.equal(msg.subject, '🔑 Reset your Moodful password');
-    assert.equal(msg.to, 'ryan@example.com');
-    assert.equal(msg.from, 'noreply@moodful.ca');
-
-    assert.ok(typeof msg.text === 'string' && msg.text.length > 0);
-    assert.ok(msg.text.includes(resetLink));
-    assert.ok(msg.text.toLowerCase().includes('expires in 60 minutes'));
-    assert.ok(msg.text.toLowerCase().includes("didn't request"));
-
-    assert.ok(typeof msg.html === 'string' && msg.html.length > 0);
-    assert.ok(msg.html.includes('class="cta-button"'));
-    assert.ok(msg.html.includes('Reset password'));
-    assert.ok(msg.html.includes(resetLink));
-    assert.ok(msg.html.includes('https://moodful.ca/img/logo.png'));
-    assert.ok(msg.html.toLowerCase().includes("didn't request"));
-  } finally {
-    await server.close();
-  }
+  assert.equal(msg.subject, '🔑 Reset your Moodful password');
+  assert.equal(msg.to, 'ryan@example.com');
+  assert.equal(msg.from, 'noreply@moodful.ca');
+  assert.ok(msg.text.includes(resetLink));
+  assert.ok(msg.text.toLowerCase().includes('expires in 60 minutes'));
+  assert.ok(msg.text.toLowerCase().includes("didn't request"));
+  assert.ok(msg.html.includes('class="cta-button"'));
+  assert.ok(msg.html.includes('Reset password'));
+  assert.ok(msg.html.includes(resetLink));
+  assert.ok(msg.html.includes('https://moodful.ca/img/logo.png'));
+  assert.ok(msg.html.toLowerCase().includes("didn't request"));
 });
-

@@ -493,7 +493,7 @@ router.delete('/account', authenticateToken, (req, res) => {
     
     let completedOperations = 0;
     let errors = [];
-    const totalOperations = 10;
+    const totalOperations = 11;
     
     function checkCompletion() {
       completedOperations++;
@@ -535,6 +535,16 @@ router.delete('/account', authenticateToken, (req, res) => {
         errors.push(`moods: ${err.message}`);
       } else {
         logger.info(`Deleted moods for user: ${userId}`);
+      }
+      checkCompletion();
+    });
+
+    // Delete from breathing_sessions
+    db.run('DELETE FROM breathing_sessions WHERE userId = ?', [userId], (err) => {
+      if (err) {
+        errors.push(`breathing_sessions: ${err.message}`);
+      } else {
+        logger.info(`Deleted breathing sessions for user: ${userId}`);
       }
       checkCompletion();
     });

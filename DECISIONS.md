@@ -57,7 +57,19 @@
   - The server can gate authenticated HTML as defense-in-depth before `express.static()` runs.
   - Cookie clearing must continue to match the same cookie attributes in `routes/auth.js`.
 
+### ADR-0006 — Store breathing activity as its own first-class session table
+- Status: Accepted
+- Date: 2026-03-21
+- Context: The new breathing feature needs durable per-session history for the app UI, aggregate reporting, and downstream LLM summaries without overloading the existing `moods` table.
+- Decision:
+  - Add a dedicated `breathing_sessions` table owned by `database.js`.
+  - Expose breathing history and aggregate reads from a dedicated authenticated router at `/api/breathing`.
+  - Keep breathing-to-mood correlation time-based for now through shared user ID, timestamps, and `calendarDate`, without adding a hard `moodId` foreign key.
+- Consequences:
+  - The frontend gets a stable breathing-specific API surface instead of embedding breathing data in mood payloads.
+  - Summary scripts can merge breathing data by local day alongside mood, sleep, and Garmin activity data.
+  - A future explicit breathing-to-mood link can be added later without undoing the current schema.
+
 ## Handoff requirements
 - Add a new ADR when a change introduces or formalizes a non-trivial architectural or workflow decision.
 - Keep entries short and grounded in current code.
-

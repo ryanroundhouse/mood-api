@@ -261,3 +261,293 @@ The tracking model should leave room for future breathing features such as:
 - guided voice or alternate audio tracks
 
 Those are not required now, but the concepts above should not assume only the two current routines will ever exist.
+
+## Implemented Backend Contract
+
+This section documents what is now actually implemented in the Moodful API and what the frontend should call.
+
+### API surface
+
+The breathing feature now lives in its own authenticated router:
+
+- route file: `routes/breathing.js`
+- mount point: `/api/breathing`
+- auth model: JWT bearer token, same as other protected JSON API routes
+
+There is no anonymous breathing endpoint and no cookie-only variant.
+
+### Supported enum values
+
+The backend currently accepts these canonical values.
+
+#### `routineType`
+
+- `box_breathing`
+- `four_seven_eight`
+
+#### `cycleMode`
+
+- `3_cycles`
+- `5_cycles`
+- `10_cycles`
+- `infinite`
+
+#### `status`
+
+- `completed`
+- `exited_early`
+- `interrupted`
+
+### Create breathing session
+
+#### Route
+
+- `POST /api/breathing/sessions`
+
+#### Required request fields
+
+- `routineType`
+- `cycleMode`
+- `completedCycles`
+- `status`
+- `startedAt`
+- `endedAt`
+
+#### Optional request fields
+
+- `timezone`
+- `triggerContext`
+- `audioEnabled`
+- `countdownCompleted`
+- `exitReason`
+
+#### Validation rules
+
+- `startedAt` and `endedAt` must be ISO-8601 timestamps
+- `endedAt` must be on or after `startedAt`
+- `completedCycles` must be an integer `>= 0`
+- `triggerContext` and `exitReason` are optional bounded strings
+- `timezone`, when sent, must be a valid IANA timezone such as `America/Toronto`
+
+#### Derived server-side fields
+
+The frontend does not need to send these:
+
+- `targetCycles`
+- `durationSeconds`
+- `calendarDate`
+- `createdAt`
+- `updatedAt`
+
+The backend derives them as follows:
+
+- `targetCycles` is derived from `cycleMode`
+- `durationSeconds` is calculated from `endedAt - startedAt`
+- `calendarDate` is derived from `startedAt`, using `timezone` when supplied; otherwise the offset/zone embedded in `startedAt` is used
+
+#### Recommended frontend values for optional strings
+
+The backend accepts any bounded string for these fields, but the current intended frontend values are:
+
+- `triggerContext`: `home_panel`, `drawer_menu`, `feature_announcement`
+- `exitReason`: values such as `user_backed_out`, `app_backgrounded`, `app_closed`, `technical_interruption`
+
+#### Example request
+
+```json
+{
+  "routineType": "box_breathing",
+  "cycleMode": "5_cycles",
+  "completedCycles": 5,
+  "status": "completed",
+  "startedAt": "2026-03-21T02:30:00Z",
+  "endedAt": "2026-03-21T02:35:00Z",
+  "timezone": "America/Toronto",
+  "triggerContext": "home_panel",
+  "audioEnabled": true,
+  "countdownCompleted": true
+}
+```
+
+#### Example response
+
+```json
+{
+  "id": 42,
+  "userId": 123,
+  "routineType": "box_breathing",
+  "cycleMode": "5_cycles",
+  "targetCycles": 5,
+  "completedCycles": 5,
+  "status": "completed",
+  "startedAt": "2026-03-21T02:30:00Z",
+  "endedAt": "2026-03-21T02:35:00Z",
+  "durationSeconds": 300,
+  "calendarDate": "2026-03-20",
+  "timezone": "America/Toronto",
+  "triggerContext": "home_panel",
+  "audioEnabled": true,
+  "countdownCompleted": true,
+  "exitReason": null,
+  "createdAt": "2026-03-21T10:00:00.000Z",
+  "updatedAt": "2026-03-21T10:00:00.000Z"
+}
+```
+
+### Get breathing history
+
+#### Route
+
+- `GET /api/breathing/sessions`
+
+#### Supported query params
+
+- `startDate`
+- `endDate`
+- `status`
+- `routineType`
+- `limit`
+- `offset`
+
+#### Query semantics
+
+- `startDate` and `endDate` filter against stored `calendarDate`
+- date values should be sent as `YYYY-MM-DD`
+- results are returned in reverse chronological order by `startedAt`
+- default `limit` is `100`
+- maximum `limit` is `200`
+
+#### Example request
+
+`GET /api/breathing/sessions?startDate=2026-03-19&routineType=four_seven_eight&limit=50`
+
+### Get breathing aggregates
+
+#### Route
+
+- `GET /api/breathing/stats`
+
+#### Supported query params
+
+- `startDate`
+- `endDate`
+
+#### Response shape
+
+```json
+{
+  "totalSessions": 2,
+  "completedSessions": 1,
+  "partialSessions": 1,
+  "sessionsByRoutine": {
+    "box_breathing": 1,
+    "four_seven_eight": 1
+  },
+  "totalCompletedCycles": 10,
+  "totalDurationSeconds": 480,
+  "mostUsedRoutine": "box_breathing"
+}
+```
+
+This endpoint currently does not return weekly or monthly rollups. It is intentionally a simple aggregate over the filtered date range.
+
+## Implemented Database Changes
+
+The backend now creates a `breathing_sessions` table in `database.js` with these fields:
+
+- `id`
+- `userId`
+- `routineType`
+- `cycleMode`
+- `targetCycles`
+- `completedCycles`
+- `status`
+- `startedAt`
+- `endedAt`
+- `durationSeconds`
+- `calendarDate`
+- `timezone`
+- `triggerContext`
+- `audioEnabled`
+- `countdownCompleted`
+- `exitReason`
+- `createdAt`
+- `updatedAt`
+
+Indexes now exist on:
+
+- `(userId, startedAt DESC)`
+- `(userId, calendarDate)`
+- `(userId, status)`
+
+Account deletion in `routes/user.js` now also deletes `breathing_sessions` rows for the user.
+
+Breathing rows are stored as structured metadata and are not encrypted at rest.
+
+## Implemented Summary-Script Changes
+
+The breathing feature is now included in the LLM summary pipeline in `scripts/send-mood-summary.py`.
+
+### New data included in `get_user_moods(...)`
+
+For each local day, the script now merges breathing data from `breathing_sessions` into the per-day JSON structure.
+
+#### Raw per-session key
+
+- `breathing_sessions`
+
+Each item has:
+
+- `routine_type`
+- `cycle_mode`
+- `target_cycles`
+- `completed_cycles`
+- `status`
+- `started_at`
+- `ended_at`
+- `duration_seconds`
+- `trigger_context`
+- `audio_enabled`
+- `countdown_completed`
+- `exit_reason`
+
+#### Per-day derived key
+
+- `breathing_summary`
+
+It contains:
+
+- `session_count`
+- `completed_session_count`
+- `partial_session_count`
+- `total_duration_seconds`
+- `total_completed_cycles`
+- `routines_used`
+- `used_breathing`
+
+If a day has breathing data but no mood entry, that day still gets a date bucket in the summary payload. This matches the existing sleep and Garmin daily-data behavior.
+
+### LLM prompt behavior
+
+The OpenAI prompt in `get_openai_insights(...)` now explicitly tells the model to analyze:
+
+- breathing sessions
+- breathing frequency
+- completed vs partial breathing behavior
+- breathing activity near low-mood or high-stress days
+- breathing alongside sleep and physical activity patterns
+
+### Current limitation
+
+The deterministic `generate_mood_summary(...)` statistics list was not changed yet. Breathing is currently included in the LLM summary input and prompt, not yet in the non-LLM summary cards.
+
+## Frontend Integration Notes
+
+For the frontend, the practical contract is:
+
+1. On session end, send one authenticated `POST /api/breathing/sessions` call.
+2. Always send canonical enum values for `routineType`, `cycleMode`, and `status`.
+3. Always send both `startedAt` and `endedAt`.
+4. Prefer sending `timezone` so `calendarDate` matches the user’s local day even when timestamps are UTC.
+5. Use `GET /api/breathing/sessions` for history screens.
+6. Use `GET /api/breathing/stats` for summary cards or lightweight aggregate displays.

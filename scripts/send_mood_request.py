@@ -1,13 +1,29 @@
 import sqlite3
 import requests
 import os
-from dotenv import load_dotenv
 import uuid
 import random
 from datetime import datetime, timedelta
-import pytz
 import logging
 import pathlib
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    import pytz
+except ModuleNotFoundError:
+    from zoneinfo import ZoneInfo
+
+    class _PytzFallback:
+        @staticmethod
+        def timezone(name):
+            return ZoneInfo(name)
+
+    pytz = _PytzFallback()
 
 # Configure logging
 logging.basicConfig(

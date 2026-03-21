@@ -1,79 +1,76 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const express = require('express');
 
 const {
   createSecurityHeadersMiddleware,
 } = require('../middleware/securityHeaders');
 
-async function startTestServer({ isDevelopment }) {
-  const app = express();
-  app.set('trust proxy', 1);
-  app.use(createSecurityHeadersMiddleware({ isDevelopment }));
-
-  app.get('/', (req, res) => {
-    res.status(200).send('OK');
-  });
-
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, () => resolve(s));
-  });
-
-  const port = server.address().port;
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
+async function invokeSecurityHeaders({ isDevelopment, forwardedProto }) {
+  const middleware = createSecurityHeadersMiddleware({ isDevelopment });
+  const req = {
+    headers: forwardedProto ? { 'x-forwarded-proto': forwardedProto } : {},
+    get(header) {
+      return this.headers[header.toLowerCase()];
+    },
+    secure: forwardedProto === 'https',
   };
+
+  return await new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      setHeader(name, value) {
+        this.headers[name.toLowerCase()] = value;
+      },
+      getHeader(name) {
+        return this.headers[name.toLowerCase()];
+      },
+      removeHeader(name) {
+        delete this.headers[name.toLowerCase()];
+      },
+      end(payload) {
+        resolve({ statusCode: this.statusCode, headers: this.headers, body: payload });
+      },
+    };
+
+    middleware(req, res, (err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      res.end('OK');
+    });
+  });
 }
 
 test('security headers are present; HSTS only on secure requests (prod mode)', async () => {
-  const server = await startTestServer({ isDevelopment: false });
-  try {
-    const resInsecure = await fetch(`${server.baseUrl}/`, {
-      redirect: 'manual',
-    });
-    assert.equal(resInsecure.status, 200);
+  const resInsecure = await invokeSecurityHeaders({ isDevelopment: false });
+  assert.equal(resInsecure.statusCode, 200);
+  assert.match(resInsecure.headers['content-security-policy'], /script-src-attr\s+'unsafe-inline'/);
+  assert.equal(resInsecure.headers['x-content-type-options'], 'nosniff');
+  assert.equal(resInsecure.headers['referrer-policy'], 'strict-origin-when-cross-origin');
+  assert.equal(resInsecure.headers['x-frame-options'], 'DENY');
+  assert.equal(
+    resInsecure.headers['permissions-policy'],
+    'geolocation=(), microphone=(), camera=()'
+  );
+  assert.equal(resInsecure.headers['strict-transport-security'], undefined);
 
-    const csp = resInsecure.headers.get('content-security-policy');
-    assert.ok(csp);
-    assert.match(csp, /script-src-attr\s+'unsafe-inline'/);
-    assert.equal(resInsecure.headers.get('x-content-type-options'), 'nosniff');
-    assert.equal(
-      resInsecure.headers.get('referrer-policy'),
-      'strict-origin-when-cross-origin'
-    );
-    assert.equal(resInsecure.headers.get('x-frame-options'), 'DENY');
-    assert.equal(
-      resInsecure.headers.get('permissions-policy'),
-      'geolocation=(), microphone=(), camera=()'
-    );
-    assert.equal(resInsecure.headers.get('strict-transport-security'), null);
-
-    const resSecure = await fetch(`${server.baseUrl}/`, {
-      redirect: 'manual',
-      headers: { 'X-Forwarded-Proto': 'https' },
-    });
-    assert.equal(resSecure.status, 200);
-    assert.equal(
-      resSecure.headers.get('strict-transport-security'),
-      'max-age=31536000; includeSubDomains'
-    );
-  } finally {
-    await server.close();
-  }
+  const resSecure = await invokeSecurityHeaders({
+    isDevelopment: false,
+    forwardedProto: 'https',
+  });
+  assert.equal(
+    resSecure.headers['strict-transport-security'],
+    'max-age=31536000; includeSubDomains'
+  );
 });
 
 test('HSTS is not set in development mode (even if request is secure)', async () => {
-  const server = await startTestServer({ isDevelopment: true });
-  try {
-    const res = await fetch(`${server.baseUrl}/`, {
-      redirect: 'manual',
-      headers: { 'X-Forwarded-Proto': 'https' },
-    });
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get('strict-transport-security'), null);
-  } finally {
-    await server.close();
-  }
+  const res = await invokeSecurityHeaders({
+    isDevelopment: true,
+    forwardedProto: 'https',
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['strict-transport-security'], undefined);
 });
-

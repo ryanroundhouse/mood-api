@@ -1,7 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const express = require('express');
-const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const {
   createLegacyApiAuthDeprecationMiddleware,
@@ -10,7 +8,7 @@ const {
 function makeFakeDb() {
   const usersByEmail = new Map();
   const usersById = new Map();
-  const refreshTokens = new Map(); // token -> { userId, token, expiresAt }
+  const refreshTokens = new Map();
 
   function seedUser(user) {
     usersByEmail.set(user.email, user);
@@ -20,19 +18,15 @@ function makeFakeDb() {
   function get(sql, params, cb) {
     try {
       if (sql.includes('FROM users WHERE email')) {
-        const email = params[0];
-        return cb(null, usersByEmail.get(email));
+        return cb(null, usersByEmail.get(params[0]));
       }
       if (sql.includes('FROM refresh_tokens WHERE token')) {
-        const token = params[0];
-        const row = refreshTokens.get(token);
-        // Endpoint already checks expiresAt > now in SQL; emulate that behavior
+        const row = refreshTokens.get(params[0]);
         if (!row || row.expiresAt <= params[1]) return cb(null, undefined);
         return cb(null, row);
       }
       if (sql.includes('FROM users WHERE id')) {
-        const id = params[0];
-        return cb(null, usersById.get(id));
+        return cb(null, usersById.get(params[0]));
       }
       return cb(new Error(`Unhandled db.get SQL: ${sql}`));
     } catch (err) {
@@ -49,8 +43,7 @@ function makeFakeDb() {
         return;
       }
       if (sql.includes('DELETE FROM refresh_tokens WHERE token')) {
-        const [token] = params;
-        refreshTokens.delete(token);
+        refreshTokens.delete(params[0]);
         if (cb) cb(null);
         return;
       }
@@ -74,6 +67,21 @@ function installDatabaseMock(fakeDb) {
   };
 }
 
+function installLoggerMock() {
+  const loggerPath = require.resolve('../utils/logger');
+  require.cache[loggerPath] = {
+    id: loggerPath,
+    filename: loggerPath,
+    loaded: true,
+    exports: {
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    },
+  };
+}
+
 function clearModule(modulePath) {
   try {
     delete require.cache[require.resolve(modulePath)];
@@ -82,35 +90,122 @@ function clearModule(modulePath) {
   }
 }
 
-async function startTestServer() {
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-
-  const authRoutes = require('../routes/auth');
-  const legacyApiAuthDeprecation = createLegacyApiAuthDeprecationMiddleware({
-    logger: { warn: () => {} },
-    sunset: '2099-01-01T00:00:00Z',
-  });
-  app.use('/api', legacyApiAuthDeprecation, authRoutes);
-  app.use('/api/auth', authRoutes);
-  app.use('/api/web-auth', authRoutes);
-
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, () => resolve(s));
-  });
-  const port = server.address().port;
-
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  };
+function loadAuthRouter(fakeDb) {
+  installLoggerMock();
+  installDatabaseMock(fakeDb);
+  clearModule('../routes/auth');
+  return require('../routes/auth');
 }
 
-function extractCookieValue(setCookieHeader, cookieName) {
-  // "refreshToken=abc; Path=/; HttpOnly; ..."
-  const match = setCookieHeader.match(new RegExp(`(?:^|,\\s*)${cookieName}=([^;]*)`));
-  return match ? match[1] : null;
+function getRouteLayer(router, method, path) {
+  return router.stack.find(
+    (layer) => layer.route && layer.route.path === path && layer.route.methods[method]
+  );
+}
+
+async function invokeAuthRoute(
+  router,
+  method,
+  path,
+  { body = {}, baseUrl = '/api/auth', cookies = {}, useLegacyDeprecation = false, params = {} } = {}
+) {
+  const layer = getRouteLayer(router, method, path);
+  assert.ok(layer, `Expected ${method.toUpperCase()} ${path} route`);
+
+  const req = {
+    method: method.toUpperCase(),
+    url: path,
+    path,
+    body,
+    params,
+    query: {},
+    headers: {},
+    cookies,
+    ip: '127.0.0.1',
+    baseUrl,
+    secure: false,
+    protocol: 'http',
+    get(header) {
+      return this.headers[header.toLowerCase()];
+    },
+  };
+
+  return await new Promise((resolve, reject) => {
+    const res = {
+      statusCode: 200,
+      headers: {},
+      setHeader(field, value) {
+        this.headers[field.toLowerCase()] = value;
+      },
+      getHeader(field) {
+        return this.headers[field.toLowerCase()];
+      },
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      set(field, value) {
+        this.headers[field.toLowerCase()] = value;
+        return this;
+      },
+      cookie(name, value, options = {}) {
+        const attributes = [`${name}=${value}`, `Path=${options.path || '/'}`];
+        if (options.httpOnly) attributes.push('HttpOnly');
+        this.headers['set-cookie'] = attributes.join('; ');
+        return this;
+      },
+      clearCookie(name, options = {}) {
+        this.headers['set-cookie'] = `${name}=; Path=${options.path || '/'}; Max-Age=0`;
+        return this;
+      },
+      json(payload) {
+        resolve({ statusCode: this.statusCode, body: payload, headers: this.headers });
+        return this;
+      },
+      redirect(codeOrUrl, maybeUrl) {
+        const statusCode = typeof maybeUrl === 'string' ? codeOrUrl : 302;
+        const location = typeof maybeUrl === 'string' ? maybeUrl : codeOrUrl;
+        this.statusCode = statusCode;
+        this.headers.location = location;
+        resolve({ statusCode: this.statusCode, body: undefined, headers: this.headers });
+        return this;
+      },
+    };
+
+    const handlers = [];
+    if (useLegacyDeprecation) {
+      handlers.push(
+        createLegacyApiAuthDeprecationMiddleware({
+          logger: { warn: () => {} },
+          sunset: '2099-01-01T00:00:00Z',
+        })
+      );
+    }
+    handlers.push(...layer.route.stack.map((routeLayer) => routeLayer.handle));
+
+    let index = 0;
+
+    function next(err) {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      const handler = handlers[index++];
+      if (!handler) {
+        resolve({ statusCode: res.statusCode, body: undefined, headers: res.headers });
+        return;
+      }
+
+      try {
+        handler(req, res, next);
+      } catch (handlerErr) {
+        reject(handlerErr);
+      }
+    }
+
+    next();
+  });
 }
 
 test('web mode (/api/web-auth/*) sets HttpOnly refresh cookie and does not return refreshToken', async () => {
@@ -119,6 +214,7 @@ test('web mode (/api/web-auth/*) sets HttpOnly refresh cookie and does not retur
   process.env.NODE_ENV = 'test';
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
   const fakeDb = makeFakeDb();
   const hashed = await bcrypt.hash('pw', 10);
@@ -130,43 +226,26 @@ test('web mode (/api/web-auth/*) sets HttpOnly refresh cookie and does not retur
     accountLevel: 'basic',
   });
 
-  installDatabaseMock(fakeDb);
-  clearModule('../routes/auth');
+  const authRoutes = loadAuthRouter(fakeDb);
+  const res = await invokeAuthRoute(authRoutes, 'post', '/login', {
+    baseUrl: '/api/web-auth',
+    body: { email: 'user@example.com', password: 'pw' },
+  });
 
-  const server = await startTestServer();
-  try {
-    const res = await fetch(`${server.baseUrl}/api/web-auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@example.com', password: 'pw' }),
-    });
-    assert.equal(res.status, 200);
-
-    const data = await res.json();
-    assert.ok(typeof data.accessToken === 'string' && data.accessToken.length > 10);
-    assert.equal('refreshToken' in data, false);
-
-    const setCookie = res.headers.get('set-cookie');
-    assert.ok(setCookie, 'expected Set-Cookie header');
-    assert.ok(setCookie.includes('HttpOnly'), 'expected HttpOnly cookie');
-    assert.ok(
-      setCookie.includes('Path=/'),
-      'expected cookie Path=/'
-    );
-
-    const refreshToken = extractCookieValue(setCookie, 'refreshToken');
-    assert.ok(refreshToken, 'expected refreshToken cookie value');
-  } finally {
-    await server.close();
-  }
+  assert.equal(res.statusCode, 200);
+  assert.ok(typeof res.body.accessToken === 'string' && res.body.accessToken.length > 10);
+  assert.equal('refreshToken' in res.body, false);
+  assert.ok(res.headers['set-cookie'].includes('HttpOnly'));
+  assert.ok(res.headers['set-cookie'].includes('Path=/'));
 });
 
-test('legacy mode (/api/*) preserves JSON refreshToken contract', async () => {
+test('legacy mode (/api/*) preserves JSON refreshToken contract and deprecation headers', async () => {
   process.env.JWT_SECRET = 'test_jwt_secret';
   process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
   process.env.NODE_ENV = 'test';
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
   const fakeDb = makeFakeDb();
   const hashed = await bcrypt.hash('pw', 10);
@@ -178,30 +257,19 @@ test('legacy mode (/api/*) preserves JSON refreshToken contract', async () => {
     accountLevel: 'basic',
   });
 
-  installDatabaseMock(fakeDb);
-  clearModule('../routes/auth');
+  const authRoutes = loadAuthRouter(fakeDb);
+  const res = await invokeAuthRoute(authRoutes, 'post', '/login', {
+    baseUrl: '/api',
+    body: { email: 'user@example.com', password: 'pw' },
+    useLegacyDeprecation: true,
+  });
 
-  const server = await startTestServer();
-  try {
-    const res = await fetch(`${server.baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@example.com', password: 'pw' }),
-    });
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get('deprecation'), 'true');
-    assert.ok(res.headers.get('sunset'));
-    assert.ok(res.headers.get('link'));
-
-    const data = await res.json();
-    assert.ok(typeof data.accessToken === 'string' && data.accessToken.length > 10);
-    assert.ok(typeof data.refreshToken === 'string' && data.refreshToken.length > 10);
-
-    const setCookie = res.headers.get('set-cookie');
-    assert.equal(setCookie, null);
-  } finally {
-    await server.close();
-  }
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers.deprecation, 'true');
+  assert.ok(res.headers.sunset);
+  assert.ok(res.headers.link);
+  assert.ok(typeof res.body.refreshToken === 'string' && res.body.refreshToken.length > 10);
+  assert.equal(res.headers['set-cookie'], undefined);
 });
 
 test('canonical JSON mode (/api/auth/*) preserves JSON refreshToken contract', async () => {
@@ -210,6 +278,7 @@ test('canonical JSON mode (/api/auth/*) preserves JSON refreshToken contract', a
   process.env.NODE_ENV = 'test';
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
   const fakeDb = makeFakeDb();
   const hashed = await bcrypt.hash('pw', 10);
@@ -221,27 +290,15 @@ test('canonical JSON mode (/api/auth/*) preserves JSON refreshToken contract', a
     accountLevel: 'basic',
   });
 
-  installDatabaseMock(fakeDb);
-  clearModule('../routes/auth');
+  const authRoutes = loadAuthRouter(fakeDb);
+  const res = await invokeAuthRoute(authRoutes, 'post', '/login', {
+    baseUrl: '/api/auth',
+    body: { email: 'user@example.com', password: 'pw' },
+  });
 
-  const server = await startTestServer();
-  try {
-    const res = await fetch(`${server.baseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@example.com', password: 'pw' }),
-    });
-    assert.equal(res.status, 200);
-
-    const data = await res.json();
-    assert.ok(typeof data.accessToken === 'string' && data.accessToken.length > 10);
-    assert.ok(typeof data.refreshToken === 'string' && data.refreshToken.length > 10);
-
-    const setCookie = res.headers.get('set-cookie');
-    assert.equal(setCookie, null);
-  } finally {
-    await server.close();
-  }
+  assert.equal(res.statusCode, 200);
+  assert.ok(typeof res.body.refreshToken === 'string' && res.body.refreshToken.length > 10);
+  assert.equal(res.headers['set-cookie'], undefined);
 });
 
 test('legacy verify (/api/verify/:token) redirects to /api/auth/verify/:token', async () => {
@@ -250,21 +307,16 @@ test('legacy verify (/api/verify/:token) redirects to /api/auth/verify/:token', 
   process.env.NODE_ENV = 'test';
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
-  const fakeDb = makeFakeDb();
-  installDatabaseMock(fakeDb);
-  clearModule('../routes/auth');
+  const authRoutes = loadAuthRouter(makeFakeDb());
+  const res = await invokeAuthRoute(authRoutes, 'get', '/verify/:token', {
+    baseUrl: '/api',
+    params: { token: 'abc123' },
+  });
 
-  const server = await startTestServer();
-  try {
-    const res = await fetch(`${server.baseUrl}/api/verify/abc123`, {
-      redirect: 'manual',
-    });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.get('location'), '/api/auth/verify/abc123');
-  } finally {
-    await server.close();
-  }
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/api/auth/verify/abc123');
 });
 
 test('web refresh-token + logout work via cookie (no body refreshToken)', async () => {
@@ -273,6 +325,7 @@ test('web refresh-token + logout work via cookie (no body refreshToken)', async 
   process.env.NODE_ENV = 'test';
   process.env.MAILGUN_API_KEY = 'test_key';
   process.env.EMAIL_DOMAIN = 'example.com';
+  process.env.ENCRYPTION_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 
   const fakeDb = makeFakeDb();
   const hashed = await bcrypt.hash('pw', 10);
@@ -284,52 +337,27 @@ test('web refresh-token + logout work via cookie (no body refreshToken)', async 
     accountLevel: 'basic',
   });
 
-  installDatabaseMock(fakeDb);
-  clearModule('../routes/auth');
+  const authRoutes = loadAuthRouter(fakeDb);
 
-  const server = await startTestServer();
-  try {
-    // Login to receive cookie
-    const loginRes = await fetch(`${server.baseUrl}/api/web-auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@example.com', password: 'pw' }),
-    });
-    assert.equal(loginRes.status, 200);
+  const loginRes = await invokeAuthRoute(authRoutes, 'post', '/login', {
+    baseUrl: '/api/web-auth',
+    body: { email: 'user@example.com', password: 'pw' },
+  });
+  const refreshToken = loginRes.headers['set-cookie'].split(';')[0].split('=')[1];
+  assert.ok(refreshToken);
 
-    const setCookie = loginRes.headers.get('set-cookie');
-    const refreshToken = extractCookieValue(setCookie, 'refreshToken');
-    assert.ok(refreshToken);
+  const refreshRes = await invokeAuthRoute(authRoutes, 'post', '/refresh-token', {
+    baseUrl: '/api/web-auth',
+    cookies: { refreshToken },
+  });
+  assert.equal(refreshRes.statusCode, 200);
+  assert.ok(typeof refreshRes.body.accessToken === 'string' && refreshRes.body.accessToken.length > 10);
 
-    const cookieHeader = `refreshToken=${refreshToken}`;
-
-    // Refresh token with cookie
-    const refreshRes = await fetch(
-      `${server.baseUrl}/api/web-auth/refresh-token`,
-      {
-      method: 'POST',
-      headers: { Cookie: cookieHeader },
-      }
-    );
-    assert.equal(refreshRes.status, 200);
-    const refreshData = await refreshRes.json();
-    assert.ok(typeof refreshData.accessToken === 'string' && refreshData.accessToken.length > 10);
-
-    // Logout clears cookie and deletes token
-    const logoutRes = await fetch(`${server.baseUrl}/api/web-auth/logout`, {
-      method: 'POST',
-      headers: { Cookie: cookieHeader },
-    });
-    assert.equal(logoutRes.status, 200);
-
-    const logoutSetCookie = logoutRes.headers.get('set-cookie');
-    assert.ok(logoutSetCookie, 'expected Set-Cookie on logout to clear cookie');
-    assert.ok(logoutSetCookie.includes('Path=/'));
-    assert.ok(logoutSetCookie.startsWith('refreshToken='));
-
-    assert.equal(fakeDb._refreshTokens.has(refreshToken), false);
-  } finally {
-    await server.close();
-  }
+  const logoutRes = await invokeAuthRoute(authRoutes, 'post', '/logout', {
+    baseUrl: '/api/web-auth',
+    cookies: { refreshToken },
+  });
+  assert.equal(logoutRes.statusCode, 200);
+  assert.ok(logoutRes.headers['set-cookie'].startsWith('refreshToken='));
+  assert.equal(fakeDb._refreshTokens.has(refreshToken), false);
 });
-

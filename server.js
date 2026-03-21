@@ -114,6 +114,10 @@ try {
   console.log('Loading mood routes...');
   const moodRoutes = require('./routes/moods');
   console.log('✓ mood routes loaded');
+
+  console.log('Loading breathing routes...');
+  const breathingRoutes = require('./routes/breathing');
+  console.log('✓ breathing routes loaded');
   
   console.log('Loading garmin routes...');
   const garminRoutes = require('./routes/garmin');
@@ -219,6 +223,7 @@ try {
   app.use('/api/garmin', garminRoutes);
   app.use('/api/moods', moodRoutes);
   app.use('/api/mood', moodRoutes);
+  app.use('/api/breathing', breathingRoutes);
   console.log('✓ Routes configured');
 
   // Server-side auth gating for authenticated HTML pages (defense-in-depth).

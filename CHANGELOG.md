@@ -1,6 +1,7 @@
 ## Agent change log
 
 ### Unreleased
+- **2026-03-21**: Seeded representative `breathing_sessions` rows for `userId = 5` in `database.sqlite` and updated `app/dashboard.html` so the calendar shows breathing-session context alongside mood, sleep, steps, and distance using the authenticated `/api/breathing/sessions` API.
 - **2026-03-21**: Implemented breathing session backend support end to end: added the authenticated `/api/breathing` API, the `breathing_sessions` SQLite table plus indexes, account-deletion cleanup, breathing-aware LLM summary input in `scripts/send-mood-summary.py`, and Node/Python test coverage. Also updated `breathing_tracking_requirements.md` to document the shipped frontend contract.
 - **2026-03-21**: Extended `breathing_tracking_requirements.md` with repo-specific implementation guidance for the new breathing feature, covering the additive SQLite schema, authenticated REST endpoints, account-deletion impact, and how `scripts/send-mood-summary.py` should include breathing session data in LLM mood summaries.
 - **2026-03-21**: Refreshed `AGENTS.md`, `STATE.md`, and `DECISIONS.md` so agent docs match the current repository layout, route mounts, test inventory, and the root-scoped web auth refresh cookie used for authenticated HTML gating.

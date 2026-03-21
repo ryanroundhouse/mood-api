@@ -25,6 +25,7 @@
 - `middleware/`: JWT auth, rate limiter, security headers, legacy auth deprecation, refresh-cookie HTML gating
 - `utils/`: encryption, mailer, datetime helpers, logger
 - `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`
+- `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`; the dashboard calendar now overlays mood, sleep, Garmin daily activity, and breathing-session context
 - `tests/`: Node tests for auth middleware, cookie auth flow, authenticated HTML routes, encryption, rate limiting, security headers, password reset email, datetime helpers, and toasts
 - `scripts/`: operational Python scripts for email, Garmin, analytics, and utilities
 - `maintenance/`: one-off Node migration and maintenance scripts
@@ -52,6 +53,7 @@
 - `/api/*` still exposes legacy auth paths for backwards compatibility and adds deprecation signaling middleware.
 - Web auth stores the refresh token in an `HttpOnly` cookie named `refreshToken` with `Path=/`.
 - Authenticated HTML pages are checked server-side by `middleware/requireWebRefreshAuth.js` before `express.static()` runs.
+- `dashboard.html` now fetches `/api/breathing/sessions` for the current calendar month and shows breathing data in day tooltips and detail bubbles alongside sleep and daily summary metrics.
 
 ## Datastores
 - Primary DB: `database.sqlite`

@@ -1,78 +1,108 @@
 ## Project snapshot
-- **Project**: Moodful API (Node/Express) + static site + operational scripts
-- **API runtime**: Node.js + Express (`server.js`, port **3000**)
-- **Datastores**: SQLite (`database.sqlite`, `analytics.sqlite`)
-- **Testing (Node)**: Node built-in **`node:test`** via `npm test`
-- **Email UX**: Auth emails are HTML-first; password reset emails include a branded HTML template + plain-text fallback (`routes/auth.js`)
-- **Security headers**: Baseline hardening headers (CSP/HSTS/etc.) applied via `helmet` (`middleware/securityHeaders.js`)
-- **Last updated**: 2026-02-14
+- Project: Moodful API
+- Shape: one Node/Express server, one vanilla static site, one primary SQLite DB, one analytics SQLite DB, plus Python and Node operational scripts
+- Real runtime entrypoint: `server.js`
+- Port: `3000`
+- Last updated: 2026-03-21
 
 ## How to run
-- **Install**: `npm install`
-- **Start server (dev)**: `npm run start` (runs `nodemon server.js`)
-- **Start server (manual)**: `node server.js`
-- **Run tests**: `npm test`
+- Install Node deps: `npm install`
+- Start dev server: `npm run start`
+- Start directly: `node server.js`
+- Run Node tests: `npm test`
+- Watch Node tests: `npm run test:watch`
 
 ### Python scripts
-- **Install deps**: `pip install -r scripts/requirements.txt`
-- **Run example**: `python scripts/send_mood_request.py`
-- **Run script tests**: `python -m unittest scripts.test_send_mood_request`
+- Install script deps: `pip install -r scripts/requirements.txt`
+- Example script: `python scripts/send_mood_request.py`
+- Script test: `python -m unittest scripts.test_send_mood_request`
 
-## Directory layout (high level)
-- **Root**: server + DB owners + docs
-  - `server.js` (Express server + route mounting + static site serving)
-  - `database.js` (primary DB schema/migrations)
-  - `analytics.js` (analytics DB schema + tracking)
-- **`app/`**: static site served by Express
-- **`app/toast.mjs`**: shared toast notifications for the static site (used instead of the old fixed header banner)
-- **`routes/`**: API routers (auth, moods, user, stripe, google-play, apple-store, garmin, contact)
-- **`middleware/`**: auth + rate limiting
-- **`utils/`**: encryption, mailer, datetime, logger
-- **`maintenance/`**: one-off scripts/migrations (Node)
-- **`scripts/`**: operational Python jobs + utilities (+ a small unittest suite)
-- **`tests/`**: Node unit tests (run by `npm test`)
-- **`.cursor/rules/`**: agent rules for this repo
+## High-level structure
+- `server.js`: bootstraps env defaults, initializes both databases, configures middleware order, mounts routes, gates authenticated HTML, and serves `app/`
+- `database.js`: owns `database.sqlite`, creates base tables, and performs additive migrations at startup
+- `analytics.js`: owns `analytics.sqlite` and tracks mood submission analytics
+- `routes/`: `auth.js`, `user.js`, `moods.js`, `stripe.js`, `contact.js`, `google-play.js`, `apple-store.js`, `garmin.js`
+- `middleware/`: JWT auth, rate limiter, security headers, legacy auth deprecation, refresh-cookie HTML gating
+- `utils/`: encryption, mailer, datetime helpers, logger
+- `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`
+- `tests/`: Node tests for auth middleware, cookie auth flow, authenticated HTML routes, encryption, rate limiting, security headers, password reset email, datetime helpers, and toasts
+- `scripts/`: operational Python scripts for email, Garmin, analytics, and utilities
+- `maintenance/`: one-off Node migration and maintenance scripts
 
-## Tooling & constraints
-- Keep diffs small; no large refactors unless requested.
-- Do not commit secrets or production data (`.env`, `*.sqlite`, key files are ignored).
-- Preserve webhook parsing requirements (Stripe/Garmin raw-body routes configured in `server.js`).
-- Prefer tests that don’t require real third-party credentials; mock/stub external APIs.
-- Web auth uses an HttpOnly refresh cookie (Path `/`) via `/api/web-auth/*`; the static site should not persist auth tokens in `localStorage`.
-- Authenticated HTML pages (`dashboard.html`, `weekly-summary.html`, `account-settings.html`) are server-gated using the refresh cookie (unauthenticated requests redirect to `login.html`).
-- API rate limiting (production) applies to `/api/*` endpoints and keys by `cf-connecting-ip` (Cloudflare) with fallbacks to `x-forwarded-for` and `req.ip`.
+## Route mounts and behavior
+- `auth` router is mounted at:
+  - `/api`
+  - `/api/auth`
+  - `/api/web-auth`
+- `moods` router is mounted at:
+  - `/api/moods`
+  - `/api/mood`
+- Other mounted prefixes:
+  - `/api/user`
+  - `/api/stripe`
+  - `/api/contact`
+  - `/api/google-play`
+  - `/api/apple-store`
+  - `/api/garmin`
 
-## Auth endpoint prefixes (migration in progress)
-- **`/api/web-auth/*`**: Web-only cookie-based auth (refresh token in HttpOnly cookie).
-- **`/api/auth/*`**: Canonical non-cookie auth endpoints (mobile + web register/forgot/reset flows).
-- **`/api/*`**: Legacy non-cookie auth endpoints (deprecated; still mounted for backwards compatibility during rollout).
+## Current auth model
+- `/api/web-auth/*` is the browser-oriented auth surface.
+- `/api/auth/*` is the canonical JSON-token auth surface.
+- `/api/*` still exposes legacy auth paths for backwards compatibility and adds deprecation signaling middleware.
+- Web auth stores the refresh token in an `HttpOnly` cookie named `refreshToken` with `Path=/`.
+- Authenticated HTML pages are checked server-side by `middleware/requireWebRefreshAuth.js` before `express.static()` runs.
 
-## Current file tree (top-level)
-```
-.
-├── .cursor/
-│   └── rules/
-├── AGENTS.md
-├── CHANGELOG.md
-├── DECISIONS.md
-├── STATE.md
-├── app/
-├── maintenance/
-├── middleware/
-├── routes/
-├── scripts/
-├── tests/
-├── utils/
-├── analytics.js
-├── database.js
-├── package.json
-└── server.js
-```
+## Datastores
+- Primary DB: `database.sqlite`
+  - Core tables include `users`, `moods`, `user_settings`, `custom_activities`, `summaries`, `refresh_tokens`, `mood_auth_codes`, `garmin_request_tokens`, `sleep_summaries`, and `daily_summaries`
+  - Sensitive mood comments and summary payloads are encrypted before storage
+- Analytics DB: `analytics.sqlite`
+  - Tracks `mood_submissions`
+  - Current sources supported in analytics are `dashboard`, `email`, `android`, and `ios`
 
-## Handoff requirements
-- Update this file when you change structure, commands, or testing conventions.
-- Update `CHANGELOG.md` at the end of agent work (when repo changes were made).
-- Ensure automated tests pass before considering a task complete:
-  - `npm test` for Node/JS changes
-  - relevant Python unit tests for script changes
+## Important implementation constraints
+- Keep middleware order intact around raw-body parsing:
+  - `/api/stripe/webhook` uses `express.raw({ type: 'application/json' })`
+  - `/api/garmin/sleep-webhook` uses `express.raw(...)` with a larger body limit
+  - JSON and URL-encoded parsers are registered after those routes
+- `trust proxy` is enabled, and production rate limiting keys by Cloudflare IP first, then forwarded IP, then `req.ip`
+- Security headers come from `middleware/securityHeaders.js` via `helmet`
+- The static site still uses inline scripts, inline styles, and some inline handlers, so the current CSP is intentionally permissive
+- `package.json` lists `"main": "index.js"`, but the actual server entrypoint is `server.js`
+
+## Current test inventory
+- `tests/authMiddleware.test.js`
+- `tests/authCookieFlow.test.js`
+- `tests/authenticatedHtmlRoutes.test.js`
+- `tests/datetime.test.js`
+- `tests/encryption.test.js`
+- `tests/passwordResetEmail.test.js`
+- `tests/rateLimiter.test.js`
+- `tests/securityHeaders.test.js`
+- `tests/toast.test.js`
+
+## Operational scripts
+- Python scripts include:
+  - `send_mood_request.py`
+  - `send-mood-summary.py`
+  - `send-privacy-update-notification.py`
+  - `calculate-usage-stats.py`
+  - `convert_moods_to_local.py`
+  - `fetch-garmin-sleep.py`
+  - `generate-sample-sleep-data.py`
+  - `pdf_to_markdown.py`
+- Node maintenance scripts include:
+  - `migrate-all-to-oauth2.js`
+  - `migrate-summaries.js`
+  - `encrypt-comments.js`
+  - `add-mood-emojis.js`
+  - `add-notification-time.js`
+  - `add-google-play-subscription.js`
+  - `duplicate-garmin-data.js`
+  - `generate-sitemap.js`
+
+## Handoff expectations
+- Update this file whenever structure, commands, auth behavior, or testing conventions change.
+- Update `CHANGELOG.md` whenever repo files changed during the task.
+- Run relevant automated checks for code changes before considering the task complete.
 

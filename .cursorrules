@@ -1,0 +1,24 @@
+You are working in a Node.js repo. It is responsible for the database, express.js rest api, and an html/css/js webpage that is served.
+
+Before making ANY edits:
+- Read `AGENTS.md`, `STATE.md`, and `DECISIONS.md`.
+
+Hard constraints:
+- For the webpage, never use any frameworks, work in only vanilla html/css/js.
+- Never add new packages to the rest api without asking for permission first.
+
+Engineering constraints:
+- Keep diffs minimal.
+- No large refactors unless explicitly requested.
+- Prefer small, testable helper functions for new logic.
+
+Testing requirements:
+- If you change Dart logic, add or update tests under `tests/` when practical.
+- Run relevant checks and ensure they pass.
+
+End-of-session requirements:
+- Update `STATE.md` when project structure, run steps, or key workflow notes change.
+- Update `CHANGELOG.md` with the date, what changed, and why.
+- If you make a non-trivial architectural or workflow decision, add it to `DECISIONS.md`.
+- Summarize what changed and any validation performed.
+- If a change needs device or platform-specific verification, call that out explicitly.

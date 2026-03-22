@@ -38,6 +38,7 @@ function initializeDatabase() {
       let hasGarminConnected = false;
       let hasAppleSubscriptionId = false;
       let hasSubscriptionExpiresAt = false;
+      let hasManualProExpiresAt = false;
       let hasGarminAccessTokenV2 = false;
       let hasGarminRefreshToken = false;
       let hasGarminTokenExpiry = false;
@@ -59,6 +60,8 @@ function initializeDatabase() {
             hasAppleSubscriptionId = true;
           } else if (col.name === 'subscriptionExpiresAt') {
             hasSubscriptionExpiresAt = true;
+          } else if (col.name === 'manualProExpiresAt') {
+            hasManualProExpiresAt = true;
           } else if (col.name === 'garminAccessTokenV2') {
             hasGarminAccessTokenV2 = true;
           } else if (col.name === 'garminRefreshToken') {
@@ -138,6 +141,16 @@ function initializeDatabase() {
             logger.error('Failed to add subscriptionExpiresAt column:', alterErr);
           } else {
             logger.info('subscriptionExpiresAt column added to users table');
+          }
+        });
+      }
+
+      if (!hasManualProExpiresAt) {
+        db.run("ALTER TABLE users ADD COLUMN manualProExpiresAt TEXT", (alterErr) => {
+          if (alterErr) {
+            logger.error('Failed to add manualProExpiresAt column:', alterErr);
+          } else {
+            logger.info('manualProExpiresAt column added to users table');
           }
         });
       }

@@ -3,7 +3,7 @@
 - Shape: one Node/Express server, one vanilla static site, one primary SQLite DB, one analytics SQLite DB, plus Python and Node operational scripts
 - Real runtime entrypoint: `server.js`
 - Port: `3000`
-- Last updated: 2026-03-21
+- Last updated: 2026-03-22
 
 ## How to run
 - Install Node deps: `npm install`
@@ -26,9 +26,9 @@
 - `utils/`: encryption, mailer, datetime helpers, logger
 - `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`
 - `app/`: public pages plus authenticated pages like `dashboard.html`, `weekly-summary.html`, and `account-settings.html`; the dashboard calendar now overlays mood, sleep, Garmin daily activity, and breathing-session context
-- `tests/`: Node tests for auth middleware, cookie auth flow, authenticated HTML routes, encryption, rate limiting, security headers, password reset email, datetime helpers, and toasts
+- `tests/`: Node tests for auth middleware, cookie auth flow, authenticated HTML routes, account-level resolution, encryption, rate limiting, security headers, password reset email, datetime helpers, and toasts
 - `scripts/`: operational Python scripts for email, Garmin, analytics, and utilities
-- `maintenance/`: one-off Node migration and maintenance scripts
+- `maintenance/`: one-off Node migration and maintenance scripts, including temporary Pro grant operations docs and tooling
 
 ## Route mounts and behavior
 - `auth` router is mounted at:
@@ -58,6 +58,7 @@
 ## Datastores
 - Primary DB: `database.sqlite`
   - Core tables include `users`, `moods`, `breathing_sessions`, `user_settings`, `custom_activities`, `summaries`, `refresh_tokens`, `mood_auth_codes`, `garmin_request_tokens`, `sleep_summaries`, and `daily_summaries`
+  - `users.manualProExpiresAt` is reserved for support-issued temporary Pro grants and is distinct from paid subscription fields
   - Sensitive mood comments and summary payloads are encrypted before storage
 - Analytics DB: `analytics.sqlite`
   - Tracks `mood_submissions`
@@ -72,8 +73,10 @@
 - Security headers come from `middleware/securityHeaders.js` via `helmet`
 - The static site still uses inline scripts, inline styles, and some inline handlers, so the current CSP is intentionally permissive
 - `package.json` lists `"main": "index.js"`, but the actual server entrypoint is `server.js`
+- Effective account level is resolved server-side from database state; a stored `basic` user can temporarily act as `pro` while `manualProExpiresAt` is still in the future
 
 ## Current test inventory
+- `tests/accountLevel.test.js`
 - `tests/authMiddleware.test.js`
 - `tests/authCookieFlow.test.js`
 - `tests/authenticatedHtmlRoutes.test.js`
@@ -106,6 +109,14 @@
   - `add-google-play-subscription.js`
   - `duplicate-garmin-data.js`
   - `generate-sitemap.js`
+  - `grant-temporary-pro.js`
+
+## Temporary manual Pro grants
+- Use `node maintenance/grant-temporary-pro.js grant --email <email>` to issue the default 6-month support grant.
+- Use `node maintenance/grant-temporary-pro.js grant --email <email> --months <n>` for a non-default duration.
+- Use `node maintenance/grant-temporary-pro.js status --email <email>` to inspect the stored manual grant and effective account level.
+- Use `node maintenance/grant-temporary-pro.js revoke --email <email>` to remove the support grant without touching paid subscription data.
+- Process documentation lives in `maintenance/manual-pro-grants.md`.
 
 ## Handoff expectations
 - Update this file whenever structure, commands, auth behavior, or testing conventions change.

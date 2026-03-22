@@ -40,29 +40,41 @@ async function createBreathingDb() {
   const db = new sqlite3.Database(':memory:');
 
   await new Promise((resolve, reject) => {
-    db.run(
-      `CREATE TABLE breathing_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId INTEGER NOT NULL,
-        routineType TEXT NOT NULL,
-        cycleMode TEXT NOT NULL,
-        targetCycles INTEGER,
-        completedCycles INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL,
-        startedAt TEXT NOT NULL,
-        endedAt TEXT NOT NULL,
-        durationSeconds INTEGER NOT NULL DEFAULT 0,
-        calendarDate TEXT NOT NULL,
-        timezone TEXT,
-        triggerContext TEXT,
-        audioEnabled INTEGER,
-        countdownCompleted INTEGER,
-        exitReason TEXT,
-        createdAt TEXT,
-        updatedAt TEXT
-      )`,
-      (err) => (err ? reject(err) : resolve())
-    );
+    db.serialize(() => {
+      db.run(
+        `CREATE TABLE users (
+          id INTEGER PRIMARY KEY,
+          accountLevel TEXT DEFAULT 'basic',
+          manualProExpiresAt TEXT
+        )`
+      );
+      db.run(
+        `INSERT INTO users (id, accountLevel, manualProExpiresAt) VALUES (1, 'basic', NULL)`
+      );
+      db.run(
+        `CREATE TABLE breathing_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          userId INTEGER NOT NULL,
+          routineType TEXT NOT NULL,
+          cycleMode TEXT NOT NULL,
+          targetCycles INTEGER,
+          completedCycles INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL,
+          startedAt TEXT NOT NULL,
+          endedAt TEXT NOT NULL,
+          durationSeconds INTEGER NOT NULL DEFAULT 0,
+          calendarDate TEXT NOT NULL,
+          timezone TEXT,
+          triggerContext TEXT,
+          audioEnabled INTEGER,
+          countdownCompleted INTEGER,
+          exitReason TEXT,
+          createdAt TEXT,
+          updatedAt TEXT
+        )`,
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
   });
 
   return db;

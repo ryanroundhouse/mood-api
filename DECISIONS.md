@@ -70,6 +70,19 @@
   - Summary scripts can merge breathing data by local day alongside mood, sleep, and Garmin activity data.
   - A future explicit breathing-to-mood link can be added later without undoing the current schema.
 
+### ADR-0007 — Separate manual Pro grants from paid subscription state
+- Status: Accepted
+- Date: 2026-03-22
+- Context: Support needs a way to grant temporary Pro access without corrupting Stripe, Apple, or Google subscription records.
+- Decision:
+  - Add a dedicated `users.manualProExpiresAt` field for support-issued temporary Pro access.
+  - Keep `users.accountLevel` as the stored billing/account tier for paid flows.
+  - Compute effective account level server-side so a stored `basic` user is treated as `pro` only while `manualProExpiresAt` is still in the future.
+  - Do not reuse Apple’s `subscriptionExpiresAt` for manual grants.
+- Consequences:
+  - Manual grants can expire cleanly without affecting paid subscription records.
+  - Auth and user-settings responses must resolve entitlement from the database instead of trusting JWT payload account level alone.
+
 ## Handoff requirements
 - Add a new ADR when a change introduces or formalizes a non-trivial architectural or workflow decision.
 - Keep entries short and grounded in current code.

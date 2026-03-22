@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { db } = require('../database');
+const { resolveEffectiveAccountLevel } = require('../utils/accountLevel');
 const JWT_SECRET = process.env.JWT_SECRET;
 
 function authenticateToken(req, res, next) {
@@ -7,10 +9,23 @@ function authenticateToken(req, res, next) {
 
   if (token == null) return res.sendStatus(401);
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, tokenUser) => {
     if (err) return res.sendStatus(401);
-    req.user = { id: user.id, accountLevel: user.accountLevel };
-    next();
+
+    db.get(
+      `SELECT id, accountLevel, manualProExpiresAt FROM users WHERE id = ?`,
+      [tokenUser.id],
+      (dbErr, user) => {
+        if (dbErr) return res.sendStatus(500);
+        if (!user) return res.sendStatus(401);
+
+        req.user = {
+          id: user.id,
+          accountLevel: resolveEffectiveAccountLevel(user),
+        };
+        next();
+      }
+    );
   });
 }
 

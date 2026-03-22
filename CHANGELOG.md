@@ -1,6 +1,7 @@
 ## Agent change log
 
 ### Unreleased
+- **2026-03-22**: Added a documented temporary Pro grant mechanism using a dedicated `users.manualProExpiresAt` field, server-side effective account-level resolution, a `maintenance/grant-temporary-pro.js` support script, and Node tests so support can issue expiring Pro access without interfering with Stripe, Apple, or Google subscription data.
 - **2026-03-21**: Seeded representative `breathing_sessions` rows for `userId = 5` in `database.sqlite` and updated `app/dashboard.html` so the calendar shows breathing-session context alongside mood, sleep, steps, and distance using the authenticated `/api/breathing/sessions` API.
 - **2026-03-21**: Implemented breathing session backend support end to end: added the authenticated `/api/breathing` API, the `breathing_sessions` SQLite table plus indexes, account-deletion cleanup, breathing-aware LLM summary input in `scripts/send-mood-summary.py`, and Node/Python test coverage. Also updated `breathing_tracking_requirements.md` to document the shipped frontend contract.
 - **2026-03-21**: Extended `breathing_tracking_requirements.md` with repo-specific implementation guidance for the new breathing feature, covering the additive SQLite schema, authenticated REST endpoints, account-deletion impact, and how `scripts/send-mood-summary.py` should include breathing session data in LLM mood summaries.

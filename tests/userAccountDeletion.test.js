@@ -39,7 +39,7 @@ function clearModule(modulePath) {
 async function createUserDeletionDb() {
   const db = new sqlite3.Database(':memory:');
   const statements = [
-    'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)',
+    "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, accountLevel TEXT DEFAULT 'basic', manualProExpiresAt TEXT)",
     'CREATE TABLE custom_activities (userId INTEGER)',
     'CREATE TABLE moods (userId INTEGER)',
     'CREATE TABLE breathing_sessions (userId INTEGER)',
@@ -57,7 +57,7 @@ async function createUserDeletionDb() {
       for (const statement of statements) {
         db.run(statement);
       }
-      db.run('INSERT INTO users (id, email) VALUES (?, ?)', [1, 'user@example.com']);
+      db.run('INSERT INTO users (id, email, accountLevel, manualProExpiresAt) VALUES (?, ?, ?, ?)', [1, 'user@example.com', 'basic', null]);
       db.run('INSERT INTO moods (userId) VALUES (?)', [1]);
       db.run('INSERT INTO breathing_sessions (userId) VALUES (?)', [1]);
       db.run('INSERT INTO user_settings (userId) VALUES (?)', [1], (err) =>

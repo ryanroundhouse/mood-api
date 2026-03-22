@@ -11,6 +11,7 @@ const { db } = require('../database');
 const { strictLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 const transporter = require('../utils/mailer');
+const { resolveEffectiveAccountLevel } = require('../utils/accountLevel');
 
 const BASE_URL = process.env.MOOD_SITE_URL || 'http://localhost:3000';
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -731,8 +732,9 @@ router.post('/login', strictLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
+    const effectiveAccountLevel = resolveEffectiveAccountLevel(user);
     const accessToken = jwt.sign(
-      { id: user.id, accountLevel: user.accountLevel },
+      { id: user.id, accountLevel: effectiveAccountLevel },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
@@ -944,8 +946,9 @@ router.post('/refresh-token', async (req, res) => {
             return res.status(401).json({ error: 'User not found' });
           }
 
+          const effectiveAccountLevel = resolveEffectiveAccountLevel(user);
           const newAccessToken = jwt.sign(
-            { id: user.id, accountLevel: user.accountLevel },
+            { id: user.id, accountLevel: effectiveAccountLevel },
             JWT_SECRET,
             { expiresIn: '15m' }
           );

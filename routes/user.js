@@ -6,13 +6,14 @@ const { authenticateToken } = require('../middleware/auth');
 const { generalLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 const { decrypt } = require('../utils/encryption');
+const { resolveEffectiveAccountLevel } = require('../utils/accountLevel');
 
 // Get user settings
 router.get('/settings', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
   db.get(
-    `SELECT users.name, users.email, users.accountLevel,
+    `SELECT users.name, users.email, users.accountLevel, users.manualProExpiresAt,
      users.garminConnected, users.garminUserId,
      user_settings.emailDailyNotifications, user_settings.emailWeeklySummary,
      user_settings.appDailyNotifications, user_settings.appWeeklySummary,
@@ -35,7 +36,7 @@ router.get('/settings', authenticateToken, (req, res) => {
       const userSettings = {
         name: row.name,
         email: row.email,
-        accountLevel: row.accountLevel,
+        accountLevel: resolveEffectiveAccountLevel(row),
         garminConnected: row.garminConnected === 1,
         garminUserId: row.garminUserId,
         emailDailyNotifications: row.emailDailyNotifications === 1,
